@@ -1,6 +1,6 @@
 # minibuffer-arcadia-support
 
-![banner]()
+![banner](hi-arcadia.gif)
 
 
 > Adds lisp support to [Minibuffer](http://seawisphunter.com/minibuffer/api/) using [Arcadia](http://arcadia-unity.github.io), a Clojure development environment for [Unity3D](http://unity3d.com/).
@@ -20,11 +20,16 @@ $ git clone git@github.com:shanecelis/minibuffer-arcadia-support.git lisp
 
 ## Usage
 
+This code defines a new Minibuffer command and function.
 
 ```
+(defcmd say-hello
+  "Say hello to x. Return a number."
+  [String Int32]
+  [x]
+  (message "Hi, " x " from Arcadia!")
+  2)
 ```
-
-## API
 
 ## Contribute
 
