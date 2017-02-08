@@ -1,0 +1,10 @@
+* TODO
+  - [ ] defcmd must be run when Minibuffer/instance is available
+
+    Fix this such that defcmd command registrations are deferred and run once Minibuffer/instance is available.
+  - [ ] Add defvariable for minibuffer variables
+  - [ ] Add register-command for existing functions
+  - [ ] Clojure commands don't provide parameter names that Minibuffer uses
+   
+    This seems weird since GenDelegate does seem to add the appropriate parameter names. But maybe the Delegate only exposes its Func<...> or Action<...> interface which would lack those.
+  - [ ] How to add Prompt info to parameters?
