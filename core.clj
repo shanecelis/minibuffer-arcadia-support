@@ -25,7 +25,8 @@
 ;; [1]: https://twitter.com/shanecelis
 
 (ns minibuffer.lisp.core
-  (:use arcadia.core) ;; use or require?  I don't know the difference.
+    (:use arcadia.core
+          arcadia.repl) ;; use or require?  I don't know the difference.
   (:import
    [UnityEngine Time Mathf Debug]
    [seawisphunter.minibuffer Minibuffer Command]))
@@ -41,6 +42,25 @@
 ;;                       string-name (name cmd-name)]
 ;;                       (defcmd -name (hash :doc) typeargs args (fn args)))
 ;;                (throw (ArgumentException. "Must provide a function for fn.")))))
+
+;; This is just me trying to debug do-with-minibuffer
+(defonce defer-count 0)
+
+(defn do-with-minibuffer
+  "Run (f Minibuffer/instance) when Minibuffer/instance is available.
+
+   FIXME: I don't think this works currently."
+  [f]
+  (if (nil? Minibuffer/instance)
+      (do
+          (def defer-count (inc defer-count))
+          (log "defering with-minibuffer")
+        (Minibuffer/OnStart (gen-delegate Action [] (f Minibuffer/instance))) )
+    (f Minibuffer/instance)))
+
+(defmacro with-minibuffer
+    [minibuffer-var & body]
+    `(do-with-minibuffer (fn [~minibuffer-var] ~@body)))
 
 (defmacro defcmd
     "Define a Minibuffer command and function. The docstring is required.
@@ -71,23 +91,28 @@
               ~docstring
               ~args
               ~@body)
-            (. Minibuffer/instance RegisterCommand (doto (Command. ~string-name)
-                                                         (.set_description ~docstring))
-               ~del)
+            (with-minibuffer ~'m
+                             (.RegisterCommand ~'m (doto (Command. ~string-name)
+                                                       (.set_description ~docstring))
+                                               ~del))
           #'~fn-name)) )
-
-;;  #(float (* (Mathf/Cos UnityEngine.Time/time) 100))
-;;  #(* (Mathf/Cos Time/time) 100)
-(defn field-of-view [f]
-  (hook+ UnityEngine.Camera/main
-         :update #(set! (.fieldOfView (cmpt % UnityEngine.Camera)) (float (f)))))
 
 (defn message
   "Print a message to the echo area."
-  [& strings]
+  [& strings] ;; or concatenate or format?
   (let [msg (apply str strings)]
        (. Minibuffer/instance Message msg)
        msg))
+
+(defn repl-eval-print-string [repl-env s]
+  (with-env-bindings repl-env
+    (let [result (try
+                   (eval-to-string
+                    (read-string* s))
+                   (catch Exception e
+                     (set! *e e)
+                     (exception-string e)))]
+      result)))
 
 (defcmd say-hello
   "Say hello to x. Return a number."
@@ -96,16 +121,3 @@
   (message "Hi, " x " from Arcadia!")
   2)
 
-(defonce defer-count 0)
-
-(defn do-with-minibuffer
-  "Run (f Minibuffer/instance) when Minibuffer/instance is available.
-
-   FIXME: I don't think this works currently."
-  [f]
-  (if (nil? Minibuffer/instance)
-      (do
-          (def defer-count (inc defer-count))
-          (log "defering do-with-minibuffer")
-          (Minibuffer/OnStart (gen-delegate Action [] (f Minibuffer/instance))) )
-    (f Minibuffer/instance)))

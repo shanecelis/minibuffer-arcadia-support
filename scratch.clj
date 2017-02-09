@@ -1,3 +1,4 @@
+;; This file is a total mess of exploratory garbage programming.
 (ns
  minibuffer.lisp.scratch
   (:require arcadia.core)
@@ -9,8 +10,8 @@
       [seawisphunter.minibuffer Minibuffer Command])
 (defn my-inc [x] (+ x 1))
 
-;;  #(float (* (Mathf/Cos UnityEngine.Time/time) 100)) 
-;;  #(* (Mathf/Cos Time/time) 100) 
+;;  #(float (* (Mathf/Cos UnityEngine.Time/time) 100))
+;;  #(* (Mathf/Cos Time/time) 100)
 (defn field-of-view [f]
   (hook+ UnityEngine.Camera/main :update #(set! (.fieldOfView (cmpt % UnityEngine.Camera)) (float (f)))))
 
@@ -19,11 +20,10 @@
 ;;                         (int x) => Debug.Log("clojure-cmd run! " + x));
 (defn add-test-command []
   (. Minibuffer/instance RegisterCommand2 (Command. "clojure-cmd")
-     (sys-action [Int32] [x] (Debug/Log (format "clojure-cmd run! %d" x)))) 
-  )
+     (sys-action [Int32] [x] (Debug/Log (format "clojure-cmd run! %d" x)))))
 
 (. Minibuffer/instance RegisterCommand2 (Command. "clojure-cmd")
-   (sys-action [Int32] [x] (Debug/Log (format "clojure-cmd run! %d" x)))) 
+   (sys-action [Int32] [x] (Debug/Log (format "clojure-cmd run! %d" x))))
 
 (defcmd ^Int32 macro-test "testing 1 2 3" [Int32 Int32] [x] (. Minibuffer/instance Message "Hi") x)
 (defcmd ^Int32 macro-test "testing" [] [x] (. Minibuffer/instance Message "Hi") x)
@@ -47,7 +47,7 @@
   `(let [x# (meta #'~fn-name)]
        [x#]))
 
-(defmacro defcmd
+(defmacro defcmd4
     "Define a minibuffer command and function."
   [fn-name docstring typeargs args & body]
   (if (empty? typeargs)
@@ -78,14 +78,7 @@
   (message "Hi, " x "!")
   1)
 
-(defn message
-  "Print a message to the echo area."
-  [& strings]
-  (let [msg (apply str strings)]
-       (. Minibuffer/instance Message msg)
-       msg))
-
-(defmacro defcmd
+(defmacro defcmd0
     "Define a minibuffer command and function. The docstring is required.
 
 e.g. (defcmd say-hello \"Says hello.\" [String Int32] [x] (message x) 1)"
@@ -94,7 +87,8 @@ e.g. (defcmd say-hello \"Says hello.\" [String Int32] [x] (message x) 1)"
                    'sys-func
                  (if (= (count typeargs) (count args))
                      'sys-action
-                   (throw (ArgumentException. "Typeargs and args must be equal length or typeargs may have one more element at the end to represent its return type."))))
+
+   (throw (ArgumentException. "Typeargs and args must be equal length or typeargs may have one more element at the end to represent its return type."))))
        del     (if (empty? args)
                    `(gen-delegate Action [] (~fn-name))
                  `(~sys-fn ~typeargs ~args (~fn-name ~@args)))
@@ -121,7 +115,7 @@ e.g. (defcmd say-hello \"Says hello.\" [String Int32] [x] (message x) 1)"
             nil))
      #'~fn-name))
 (. Minibuffer/instance RegisterCommand (Command. "clojure-cmd")
-   (sys-action [Int32] [x] (Debug/Log (format "clojure-cmd run! %d" x)))) 
+   (sys-action [Int32] [x] (Debug/Log (format "clojure-cmd run! %d" x))))
 
 (defn remove-test-command []
   (. Minibuffer/instance UnregisterCommand "clojure-cmd"))
@@ -130,10 +124,7 @@ e.g. (defcmd say-hello \"Says hello.\" [String Int32] [x] (message x) 1)"
 (add-test-command)
 
 ;; (let [ts (objects-named #".+")]
-;;   (hook+ (first ts) :on-draw-gizmos 
-;;          (fn [o] 
-;;            (reduce #(do (Gizmos/DrawLine %1 %2) %2) 
+;;   (hook+ (first ts) :on-draw-gizmos
+;;          (fn [o]
+;;            (reduce #(do (Gizmos/DrawLine %1 %2) %2)
 ;;                    (map #(.. % transform position) ts)))))
-
-
-
