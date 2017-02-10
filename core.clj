@@ -62,6 +62,14 @@
     [minibuffer-var & body]
     `(do-with-minibuffer (fn [~minibuffer-var] ~@body)))
 
+;; http://stackoverflow.com/questions/17198044/how-can-i-determine-number-of-arguments-to-a-function-in-clojure
+(defn- arities [v]
+  (->> v
+       meta
+       :arglists
+       (map #(remove #{'&} %))
+       (map count)))
+
 (defmacro defcmd
     "Define a Minibuffer command and function. The docstring is required.
   The typeargs define what C# types the function accepts and optionally what it
@@ -78,24 +86,47 @@
   prompt for a string. Functions with a String output will be `message`'d
   automatically. Functions with a IEnumerator output will be run as coroutines."
   [fn-name docstring typeargs args & body]
-  (let [sys-fn (if (= (count typeargs) (+ 1 (count args)))
-                   'sys-func
-                 (if (= (count typeargs) (count args))
-                     'sys-action
-                   (throw (ArgumentException. "Typeargs and args must be equal length or typeargs may have one more element at the end to represent its return type."))))
-       del     (if (empty? args)
-                   `(gen-delegate Action [] (~fn-name))
-                 `(~sys-fn ~typeargs ~args (~fn-name ~@args)))
-       string-name (name fn-name)]
-       `(do (defn ~fn-name
-              ~docstring
-              ~args
-              ~@body)
-            (with-minibuffer ~'m
-                             (.RegisterCommand ~'m (doto (Command. ~string-name)
-                                                       (.set_description ~docstring))
-                                               ~del))
-          #'~fn-name)) )
+  (if (some #{'&} args)
+      (throw (ArgumentException. "Cannot have variable length arguments '&' in command."))
+      (let [sys-fn (if (= (count typeargs) (+ 1 (count args)))
+                    'sys-func
+                  (if (= (count typeargs) (count args))
+                      'sys-action
+                    (throw (ArgumentException. "Typeargs and args must be equal length or typeargs may have one more element at the end to represent its return type."))))
+        del     (if (empty? args)
+                    `(gen-delegate Action [] (~fn-name))
+                  `(~sys-fn ~typeargs ~args (~fn-name ~@args)))
+        string-name (name fn-name)]
+        `(do (defn ~fn-name
+               ~docstring
+               ~args
+               ~@body)
+             (with-minibuffer ~'m
+                              (.RegisterCommand ~'m (doto (Command. ~string-name)
+                                                          (.set_description ~docstring))
+                                                ~del))
+           #'~fn-name))))
+
+(defn register-command
+  [cmd-name typeargs args f attrs]
+  (let [del (cond
+             (= (count typeargs) (+ 1 (count args))) (eval `(sys-func ~typeargs ~args (~f ~@args)))
+             (empty? args)                           (gen-delegate Action [] (f))
+             (= (count typeargs) (count args))       (eval `(sys-action ~typeargs ~args (~f ~@args)))
+             :else (throw (ArgumentException.
+                           (str "Typeargs and args must be equal length or typeargs may have "
+                                "one more element at the end to represent its return type."))))]
+                 (with-minibuffer m
+                                  (.RegisterCommand m
+                                                    (doto (Command. cmd-name)
+                                                          (.set_description (:description attrs nil))
+                                                          (.set_keySequence (:keysequence attrs nil))
+                                                          (.set_signature   (:signature attrs nil))
+                                                          (.set_parameterNames (:parameter-names attrs nil))
+                                                          )
+                                                    del))))
+(defn do-thing [] (message "do-thing"))
+(register-command "do-thing-cmd" [] [] do-thing {})
 
 (defn message
   "Print a message to the echo area."
@@ -104,20 +135,74 @@
        (. Minibuffer/instance Message msg)
        msg))
 
-(defn repl-eval-print-string [repl-env s]
-  (with-env-bindings repl-env
-    (let [result (try
-                   (eval-to-string
-                    (read-string* s))
-                   (catch Exception e
-                     (set! *e e)
-                     (exception-string e)))]
-      result)))
+;; Thanks, Joseph (@selfsame), for the repl environment tip!
+(def repl-env (atom (arcadia.repl/env-map)))
+
+(defn repl-eval-print-string [s]
+  (let [{:keys [result env]} (arcadia.repl/repl-eval-print repl-env s)]
+       (reset! repl-env env)
+       result))
 
 (defcmd say-hello
   "Say hello to x. Return a number."
-  [String Int32]
+  [String Int32] ;; this causes an error
   [x]
   (message "Hi, " x " from Arcadia!")
   2)
 
+(defcmd say-hello2
+  "Say hello to x. Return a number."
+  [String] ;; works
+  [x]
+  (message "Hi, " x " from Arcadia!")
+  )
+
+(defcmd say-hello3
+  "Say hello to x. Return a number."
+  [] ;; works
+  []
+  (message "Hi,  from Arcadia!")
+  )
+
+(macroexpand ' (defcmd say-hello3
+                 "Say hello to x. Return a number."
+                 []
+                 []
+                 (message "Hi,  from Arcadia!")
+                 ))
+
+
+(defcmd say-hello4
+  "Say hello to x. Return a number."
+  [String String] ;; this works. Probably a boxing error.
+  [x]
+  (message "Hi, " x " from Arcadia!")
+  "Oh")
+
+(defcmd say-hello5
+  "Say hello to x. Return a number."
+  [String String] ;; problem
+  [x]
+  (message "Hi, " x " from Arcadia!")
+  1)
+
+(defcmd say-hello6
+  "Say hello to x. Return a number."
+  [String Object] ;; problem
+  [x]
+  (message "Hi, " x " from Arcadia!")
+  1)
+
+(defcmd say-hello7
+  "Say hello to x. Return a number."
+  [String Char] ;; works
+  [x]
+  (message "Hi, " x " from Arcadia!")
+  \a)
+
+(defcmd say-hello8
+  "Say hello to x. Return a number."
+  [String Char] ;; works
+  [x & y]
+  (message "Hi, " x " from Arcadia!")
+  \a)

@@ -7,4 +7,9 @@
   - [ ] Clojure commands don't provide parameter names that Minibuffer uses
    
     This seems weird since GenDelegate does seem to add the appropriate parameter names. But maybe the Delegate only exposes its Func<...> or Action<...> interface which would lack those.
+  
+    Maybe add a new delegate type or types to handle it?  How 'bout just adding that info to Command?
+  - [ ] The describe-command should show it defined in Clojure.
   - [ ] How to add Prompt info to parameters?
+    
+    Use CommandInfo, maybe CustomCommandInfo for parameters and custom signature
