@@ -70,6 +70,17 @@
        (map #(remove #{'&} %))
        (map count)))
 
+(defmacro make-delegate
+    [typeargs args f]
+    (cond
+     (some #{'&} args)                       (throw
+                                              (ArgumentException. "Cannot have variable length arguments '&' in command."))
+     (= (count typeargs) (+ 1 (count args))) `(sys-func ~typeargs ~args (~f ~@args))
+     (empty? args)                           `(gen-delegate Action [] (~f))
+     (= (count typeargs) (count args))       `(sys-action ~typeargs ~args (~f ~@args))
+     :else (throw (ArgumentException.
+                   (str "Typeargs and args must be equal length or typeargs may have "
+                        "one more element at the end to represent its return type.")))))
 (defmacro defcmd
     "Define a Minibuffer command and function. The docstring is required.
   The typeargs define what C# types the function accepts and optionally what it
@@ -86,47 +97,30 @@
   prompt for a string. Functions with a String output will be `message`'d
   automatically. Functions with a IEnumerator output will be run as coroutines."
   [fn-name docstring typeargs args & body]
-  (if (some #{'&} args)
-      (throw (ArgumentException. "Cannot have variable length arguments '&' in command."))
-      (let [sys-fn (if (= (count typeargs) (+ 1 (count args)))
-                    'sys-func
-                  (if (= (count typeargs) (count args))
-                      'sys-action
-                    (throw (ArgumentException. "Typeargs and args must be equal length or typeargs may have one more element at the end to represent its return type."))))
-        del     (if (empty? args)
-                    `(gen-delegate Action [] (~fn-name))
-                  `(~sys-fn ~typeargs ~args (~fn-name ~@args)))
-        string-name (name fn-name)]
-        `(do (defn ~fn-name
-               ~docstring
-               ~args
-               ~@body)
-             (with-minibuffer ~'m
-                              (.RegisterCommand ~'m (doto (Command. ~string-name)
-                                                          (.set_description ~docstring))
-                                                ~del))
-           #'~fn-name))))
+  `(do (defn ~fn-name
+         ~docstring
+         ~args ;; add type annotation?
+         ~@body)
+       (with-minibuffer ~'m
+                        (.RegisterCommand ~'m (doto (Command. ~(name fn-name))
+                                                    (.set_description ~docstring))
+                                          (make-delegate ~typeargs ~args ~fn-name)))
+     #'~fn-name))
 
 (defn register-command
   [cmd-name typeargs args f attrs]
-  (let [del (cond
-             (= (count typeargs) (+ 1 (count args))) (eval `(sys-func ~typeargs ~args (~f ~@args)))
-             (empty? args)                           (gen-delegate Action [] (f))
-             (= (count typeargs) (count args))       (eval `(sys-action ~typeargs ~args (~f ~@args)))
-             :else (throw (ArgumentException.
-                           (str "Typeargs and args must be equal length or typeargs may have "
-                                "one more element at the end to represent its return type."))))]
-                 (with-minibuffer m
-                                  (.RegisterCommand m
-                                                    (doto (Command. cmd-name)
-                                                          (.set_description (:description attrs nil))
-                                                          (.set_keySequence (:keysequence attrs nil))
-                                                          (.set_signature   (:signature attrs nil))
-                                                          (.set_parameterNames (:parameter-names attrs nil))
-                                                          )
-                                                    del))))
-(defn do-thing [] (message "do-thing"))
-(register-command "do-thing-cmd" [] [] do-thing {})
+  (with-minibuffer m
+                   (.RegisterCommand m
+                                     (doto (Command. cmd-name)
+                                           (.set_description (:description attrs nil))
+                                           (.set_keySequence (:keysequence attrs nil))
+                                           (.set_signature   (:signature attrs nil))
+                                           (.set_parameterNames
+                                            (if (:parameter-names attrs nil)
+                                                (into-array String (into ["closure"] (:parameter-names attrs nil)))
+                                              nil)))
+                                     (eval `(make-delegate ~typeargs ~args ~f)))))
+
 
 (defn message
   "Print a message to the echo area."
@@ -157,6 +151,11 @@
   (message "Hi, " x " from Arcadia!")
   )
 
+(defn do-thing [] (message "do-thing"))
+(make-delegate [] [] do-thing)
+(register-command "do-thing-cmd" [] [] 'do-thing {})
+(register-command "say-hello2-cmd" [String] '[name] 'say-hello2 {:signature "(defn say-hello2 (^String name) ...)"
+                  :parameter-names ["name"]})
 (defcmd say-hello3
   "Say hello to x. Return a number."
   [] ;; works
