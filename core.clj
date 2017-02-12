@@ -27,21 +27,12 @@
 (ns minibuffer.lisp.core
     (:use arcadia.core
           arcadia.repl) ;; use or require?  I don't know the difference.
+
   (:import
    [UnityEngine Time Mathf Debug]
    [seawisphunter.minibuffer Minibuffer Command]))
 
 (log "minibuffer.lisp.core reloaded")
-
-;; (defn register-command
-;;   ""
-;;   ([cmd-name typeargs func]
-;;              (if (fn? func)
-;;                  (let [hash (meta (var func))
-;;                       args (hash :arglists)
-;;                       string-name (name cmd-name)]
-;;                       (defcmd -name (hash :doc) typeargs args (fn args)))
-;;                (throw (ArgumentException. "Must provide a function for fn.")))))
 
 ;; This is just me trying to debug do-with-minibuffer
 (defonce defer-count 0)
@@ -62,14 +53,6 @@
     [minibuffer-var & body]
     `(do-with-minibuffer (fn [~minibuffer-var] ~@body)))
 
-;; http://stackoverflow.com/questions/17198044/how-can-i-determine-number-of-arguments-to-a-function-in-clojure
-(defn- arities [v]
-  (->> v
-       meta
-       :arglists
-       (map #(remove #{'&} %))
-       (map count)))
-
 (defmacro make-delegate
     [typeargs args f]
     (cond
@@ -81,6 +64,7 @@
      :else (throw (ArgumentException.
                    (str "Typeargs and args must be equal length or typeargs may have "
                         "one more element at the end to represent its return type.")))))
+
 (defmacro defcmd
     "Define a Minibuffer command and function. The docstring is required.
   The typeargs define what C# types the function accepts and optionally what it
@@ -124,13 +108,26 @@
                 (if (:typeresult h#)
                     (conj (:typeargs h#) (:typeresult h#))
                   (:typeargs h#))))
-
-(defmacro huh [f args]
-          (list (mapv name args)
-                (str "(defn " (name f) " ["
-                     (clojure.string/join " " (map name args)) "] ...)"))
-          )
-(macroexpand '(huh g [x y z]))
+(defn register-command
+  [cmd-name-or-attrs typeargs args f]
+  (let [attrs (if (string? cmd-name-or-attrs)
+                  {:name cmd-name-or-attrs}
+                  cmd-name-or-attrs)]
+   (with-minibuffer
+    m
+    (.RegisterCommand m
+                      (doto (Command. (:name attrs nil))
+                            (.set_description (:description attrs nil))
+                            (.set_keySequence (:keysequence attrs nil))
+                            (.set_signature   (:signature attrs nil))
+                            (.set_parameterNames
+                             (if (:parameter-names attrs nil)
+                                 ;; There's an extra "closure "parameter in the
+                                 ;; generated method.
+                                 (into-array String (into ["closure"]
+                                                          (:parameter-names attrs nil)))
+                               nil)))
+                      (eval `(make-delegate ~typeargs ~args ~f))))))
 
 (defmacro defcmd2
     "Define a Minibuffer command and function. The docstring is required.
@@ -138,8 +135,8 @@
   returns. Minibuffer makes extensive use of the type information. Consider the
   following example.
 
-  e.g. (defcmd say-hello \"Says hello. Return int.\" [String Int32]
-          [x]
+  e.g. (defcmd ^Int64 say-hello \"Says hello. Return int.\" 
+          [^String x]
           (message \"Hello, \" x)
           1)
 
@@ -163,35 +160,12 @@
                          '~fn-name)
      #'~fn-name))
 
-
-(defn register-command
-  [cmd-name-or-attrs typeargs args f]
-  (let [attrs (if (string? cmd-name-or-attrs)
-                  {:name cmd-name-or-attrs}
-                  cmd-name-or-attrs)]
-   (with-minibuffer
-    m
-    (.RegisterCommand m
-                      (doto (Command. (:name attrs nil))
-                            (.set_description (:description attrs nil))
-                            (.set_keySequence (:keysequence attrs nil))
-                            (.set_signature   (:signature attrs nil))
-                            (.set_parameterNames
-                             (if (:parameter-names attrs nil)
-                                 ;; There's an extra "closure "parameter in the
-                                 ;; generated method.
-                                 (into-array String (into ["closure"]
-                                                          (:parameter-names attrs nil)))
-                               nil)))
-                      (eval `(make-delegate ~typeargs ~args ~f))))))
-
-
 (defn message
   "Print a message to the echo area."
   [& strings] ;; or concatenate or format?
   (let [msg (apply str strings)]
        (with-minibuffer m
-                        #_(.Message m msg))
+                        (.Message m msg))
        msg))
 
 ;; Thanks, Joseph (@selfsame), for the repl environment tip!
@@ -201,106 +175,3 @@
   (let [{:keys [result env]} (arcadia.repl/repl-eval-print repl-env s)]
        (reset! repl-env env)
        result))
-
-(defcmd say-hello
-  "Say hello to x. Return a number."
-  [String Int32] ;; this causes an error
-  [x]
-  (message "Hi, " x " from Arcadia!")
-  2)
-
-(defcmd say-hello2
-  "Say hello to x. Return a number."
-  [String] ;; works
-  [x]
-  (message "Hi, " x " from Arcadia!")
-  )
-
-(defn do-thing [] (message "do-thing"))
-(make-delegate [] [] do-thing)
-
-(pprint (macroexpand '(separate-types ^:hi do-thing2 [^String a ^Object b ])))
-(pprint (separate-types ^:hi ^Int32 do-thing2 [^String a ^Object b c]))
-(meta #'do-thing)
-
-(defmacro check-meta [f args & body]
-          (let [m (meta &form)]
-               `(list ~m (do
-                                        ;                     (with-meta (defn ~f ~args ~@body) {})
-                            (defn ~f ~args ~@body) 
-                            (let [mf# (meta #'~f)
-                                 margs# (first (:arglists mf#))]
-                                 (list #_'(meta '&form)
-                                       mf#
-                                  (:tag mf#)
-                                  (->> margs#
-                                         (mapv meta)
-                                         (mapv :tag))))))))
-(pprint (check-meta ^:hi ^:bye ^Int32 do-thing [^String a b] 1))
-(meta #'do-thing)
-(pprint (macroexpand '(check-meta ^:hi do-thing [^String a] 1)))
-(register-command "do-thing-cmd" [] [] 'do-thing {})
-(register-command "say-hello2-cmd" [String] '[name] 'say-hello2 {:signature "(defn say-hello2 (^String name) ...)"
-                  :parameter-names ["name"] :description "Say hello!"})
-(defcmd say-hello3
-  "Say hello to x. Return a number."
-  [] ;; works
-  []
-  (message "Hi,  from Arcadia!")
-  )
-
-(macroexpand ' (defcmd say-hello3
-                 "Say hello to x. Return a number."
-                 []
-                 []
-                 (message "Hi,  from Arcadia!")
-                 ))
-(use 'clojure.pprint)
-(macroexpand '(defcmd2 say-hello3
-                "Say hello to x. Return a number."
-                [^String x]
-                (message "Hi, from Arcadia! " x)
-                )) 
-
-(defcmd2 say-hello3
-  "Say hello to x. Return a number."
-  [^String x]
-  (message "Hi, from Arcadia! " x)
-  )
-(defcmd say-hello4
-  "Say hello to x. Return a number."
-  [String String] ;; this works. Probably a boxing error.
-  [x]
-  (message "Hi, " x " from Arcadia!")
-  "Oh")
-
-(defcmd say-hello5
-  "Say hello to x. Return a number."
-  [String String] ;; problem
-  [x]
-  (message "Hi, " x " from Arcadia!")
-  1)
-
-(defcmd say-hello6
-  "Say hello to x. Return a number."
-  [String Object] ;; problem
-  [x]
-  (message "Hi, " x " from Arcadia!")
-  1)
-
-(defcmd say-hello7
-  "Say hello to x. Return a number."
-  [String Char] ;; works
-  [x]
-  (message "Hi, " x " from Arcadia!")
-  \a)
-
-(defcmd say-hello8
-  "Say hello to x. Return a number."
-  [String Char] ;; works
-  [x & y]
-  (message "Hi, " x " from Arcadia!")
-  \a)
-
-(defn ^String wat [^String s]
-  (str s " wat?"))

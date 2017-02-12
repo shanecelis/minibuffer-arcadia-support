@@ -1,7 +1,8 @@
 ;; This file is a total mess of exploratory garbage programming.
 (ns
  minibuffer.lisp.scratch
-  (:require arcadia.core)
+  (:use arcadia.core
+            minibuffer.lisp.core)
   (:import
    [UnityEngine Time Mathf Debug]
    [seawisphunter.minibuffer Minibuffer Command]))
@@ -128,3 +129,134 @@ e.g. (defcmd say-hello \"Says hello.\" [String Int32] [x] (message x) 1)"
 ;;          (fn [o]
 ;;            (reduce #(do (Gizmos/DrawLine %1 %2) %2)
 ;;                    (map #(.. % transform position) ts)))))
+
+(defmacro huh [f args]
+  (list (mapv name args)
+        (str "(defn " (name f) " ["
+             (clojure.string/join " " (map name args)) "] ...)"))
+  )
+
+;; http://stackoverflow.com/questions/17198044/how-can-i-determine-number-of-arguments-to-a-function-in-clojure
+(defn- arities [v]
+  (->> v
+       meta
+       :arglists
+       (map #(remove #{'&} %))
+       (map count)))
+
+;;(macroexpand '(sys-action [String] [s] (say-hello2 s)))
+;; (. clojure.lang.GenDelegate Create |System.Action`1[System.String]| say-hello2)
+;; (defmacro gen-delegate 
+;;     [type argVec & body] 
+;;     (with-meta `(clojure.lang.GenDelegate/Create ~type (fn ~argVec ~@body))
+;;                (meta &form)))                                                ;;;  How can we tag with ~type if that is not computed yet
+(macroexpand '(huh g [x y z]))
+(defcmd say-hello
+  "Say hello to x. Return a number."
+  [String Int32] ;; this causes an error
+  [x]
+  (message "Hi, " x " from Arcadia!")
+  2)
+
+(defcmd say-hello2
+  "Say hello to x. Return a number."
+  [String] ;; works
+  [x]
+  (message "Hi, " x " from Arcadia!")
+  )
+
+(defn do-thing [] (message "do-thing"))
+(make-delegate [] [] do-thing)
+
+(pprint (macroexpand '(separate-types ^:hi do-thing2 [^String a ^Object b ])))
+(pprint (separate-types ^:hi ^Int32 do-thing2 [^String a ^Object b c]))
+(meta #'do-thing)
+
+
+
+(defmacro check-meta [f args & body]
+          (let [m (meta &form)]
+               `(list ~m (do
+                                        ;                     (with-meta (defn ~f ~args ~@body) {})
+                            (defn ~f ~args ~@body) 
+                            (let [mf# (meta #'~f)
+                                 margs# (first (:arglists mf#))]
+                                 (list #_'(meta '&form)
+                                       mf#
+                                  (:tag mf#)
+                                  (->> margs#
+                                         (mapv meta)
+                                         (mapv :tag))))))))
+(pprint (check-meta ^:hi ^:bye ^Int32 do-thing [^String a b] 1))
+(meta #'do-thing)
+(pprint (macroexpand '(check-meta ^:hi do-thing [^String a] 1)))
+(register-command "do-thing-cmd" [] [] 'do-thing {})
+(register-command {:name "say-hello2-cmd" :signature "(defn say-hello2 (^String name) ...)"
+                  :parameter-names ["name"] :description "Say hello!"} [String] '[name] 'say-hello2)
+(defcmd say-hello3
+  "Say hello to x. Return a number."
+  [] ;; works
+  []
+  (message "Hi,  from Arcadia!")
+  )
+
+(macroexpand ' (defcmd say-hello3
+                 "Say hello to x. Return a number."
+                 []
+                 []
+                 (message "Hi,  from Arcadia!")
+                 ))
+(use 'clojure.pprint)
+(macroexpand '(defcmd2 say-hello3
+                "Say hello to x. Return a number."
+                [^String x]
+                (message "Hi, from Arcadia! " x)
+                )) 
+
+(defcmd2 say-hello3
+  "Say hello to x. Return a number."
+  [^String x]
+  (message "Hi, from Arcadia! " x))
+(defcmd say-hello4
+  "Say hello to x. Return a number."
+  [String String] ;; this works. Probably a boxing error.
+  [x]
+  (message "Hi, " x " from Arcadia!")
+  "Oh")
+
+(defcmd2 say-hello8
+  "Yo"
+  [^Int64 x]
+  (message "Got number" x))
+
+
+(defcmd say-hello5
+  "Say hello to x. Return a number."
+  [String String] ;; problem
+  [x]
+  (message "Hi, " x " from Arcadia!")
+  1)
+
+(defcmd say-hello6
+  "Say hello to x. Return a number."
+  [String Object] ;; problem
+  [x]
+  (message "Hi, " x " from Arcadia!")
+  1)
+
+(defcmd say-hello7
+  "Say hello to x. Return a number."
+  [String Char] ;; works
+  [x]
+  (message "Hi, " x " from Arcadia!")
+  \a)
+
+(defcmd say-hello8
+  "Say hello to x. Return a number."
+  [String Char] ;; works
+  [x & y]
+  (message "Hi, " x " from Arcadia!")
+  \a)
+
+(defn ^String wat [^String s]
+  (str s " wat?"))
