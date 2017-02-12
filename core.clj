@@ -107,26 +107,91 @@
                                           (make-delegate ~typeargs ~args ~fn-name)))
      #'~fn-name))
 
+(defmacro separate-types [f args]
+          `{:typeargs (->> '~args
+                           (mapv meta)
+                           (mapv :tag))
+          :typeresult (:tag (meta '~f))})
+
+;; (defmacro separate-types-oldform [f args]
+;;           `(let [{:keys [typeargs# typeresult#]} (separate-types ~f ~args)]
+;;                 (if typeresult#
+;;                     (conj typeargs# typeresult#)
+;;                   typeargs#)))
+
+(defmacro separate-types-oldform [f args]
+          `(let [h# (separate-types ~f ~args)]
+                (if (:typeresult h#)
+                    (conj (:typeargs h#) (:typeresult h#))
+                  (:typeargs h#))))
+
+(defmacro huh [f args]
+          (list (mapv name args)
+                (str "(defn " (name f) " ["
+                     (clojure.string/join " " (map name args)) "] ...)"))
+          )
+(macroexpand '(huh g [x y z]))
+
+(defmacro defcmd2
+    "Define a Minibuffer command and function. The docstring is required.
+  The typeargs define what C# types the function accepts and optionally what it
+  returns. Minibuffer makes extensive use of the type information. Consider the
+  following example.
+
+  e.g. (defcmd say-hello \"Says hello. Return int.\" [String Int32]
+          [x]
+          (message \"Hello, \" x)
+          1)
+
+  The function `say-hello` be defined as if it were a normal `defn` but it may
+  additionally be run interactively by typing `M-x say-hello` which will then
+  prompt for a string. Functions with a String output will be `message`'d
+  automatically. Functions with a IEnumerator output will be run as coroutines."
+  [fn-name docstring args & body]
+  `(do
+       (defn ~fn-name
+         ~docstring
+         ~args
+         ~@body)
+       (register-command { :name ~(name fn-name)
+                         :description ~docstring
+                         :signature ~(str "(defn " (name fn-name) " ["
+                                         (clojure.string/join " " (map name args)) "] ...)")
+                         :parameter-names ~(mapv name args) }
+                         (separate-types-oldform ~fn-name ~args)
+                         '~args
+                         '~fn-name)
+     #'~fn-name))
+
+
 (defn register-command
-  [cmd-name typeargs args f attrs]
-  (with-minibuffer m
-                   (.RegisterCommand m
-                                     (doto (Command. cmd-name)
-                                           (.set_description (:description attrs nil))
-                                           (.set_keySequence (:keysequence attrs nil))
-                                           (.set_signature   (:signature attrs nil))
-                                           (.set_parameterNames
-                                            (if (:parameter-names attrs nil)
-                                                (into-array String (into ["closure"] (:parameter-names attrs nil)))
-                                              nil)))
-                                     (eval `(make-delegate ~typeargs ~args ~f)))))
+  [cmd-name-or-attrs typeargs args f]
+  (let [attrs (if (string? cmd-name-or-attrs)
+                  {:name cmd-name-or-attrs}
+                  cmd-name-or-attrs)]
+   (with-minibuffer
+    m
+    (.RegisterCommand m
+                      (doto (Command. (:name attrs nil))
+                            (.set_description (:description attrs nil))
+                            (.set_keySequence (:keysequence attrs nil))
+                            (.set_signature   (:signature attrs nil))
+                            (.set_parameterNames
+                             (if (:parameter-names attrs nil)
+                                 ;; There's an extra "closure "parameter in the
+                                 ;; generated method.
+                                 (into-array String (into ["closure"]
+                                                          (:parameter-names attrs nil)))
+                               nil)))
+                      (eval `(make-delegate ~typeargs ~args ~f))))))
 
 
 (defn message
   "Print a message to the echo area."
   [& strings] ;; or concatenate or format?
   (let [msg (apply str strings)]
-       (. Minibuffer/instance Message msg)
+       (with-minibuffer m
+                        #_(.Message m msg))
        msg))
 
 ;; Thanks, Joseph (@selfsame), for the repl environment tip!
@@ -153,9 +218,30 @@
 
 (defn do-thing [] (message "do-thing"))
 (make-delegate [] [] do-thing)
+
+(pprint (macroexpand '(separate-types ^:hi do-thing2 [^String a ^Object b ])))
+(pprint (separate-types ^:hi ^Int32 do-thing2 [^String a ^Object b c]))
+(meta #'do-thing)
+
+(defmacro check-meta [f args & body]
+          (let [m (meta &form)]
+               `(list ~m (do
+                                        ;                     (with-meta (defn ~f ~args ~@body) {})
+                            (defn ~f ~args ~@body) 
+                            (let [mf# (meta #'~f)
+                                 margs# (first (:arglists mf#))]
+                                 (list #_'(meta '&form)
+                                       mf#
+                                  (:tag mf#)
+                                  (->> margs#
+                                         (mapv meta)
+                                         (mapv :tag))))))))
+(pprint (check-meta ^:hi ^:bye ^Int32 do-thing [^String a b] 1))
+(meta #'do-thing)
+(pprint (macroexpand '(check-meta ^:hi do-thing [^String a] 1)))
 (register-command "do-thing-cmd" [] [] 'do-thing {})
 (register-command "say-hello2-cmd" [String] '[name] 'say-hello2 {:signature "(defn say-hello2 (^String name) ...)"
-                  :parameter-names ["name"]})
+                  :parameter-names ["name"] :description "Say hello!"})
 (defcmd say-hello3
   "Say hello to x. Return a number."
   [] ;; works
@@ -169,8 +255,18 @@
                  []
                  (message "Hi,  from Arcadia!")
                  ))
+(use 'clojure.pprint)
+(macroexpand '(defcmd2 say-hello3
+                "Say hello to x. Return a number."
+                [^String x]
+                (message "Hi, from Arcadia! " x)
+                )) 
 
-
+(defcmd2 say-hello3
+  "Say hello to x. Return a number."
+  [^String x]
+  (message "Hi, from Arcadia! " x)
+  )
 (defcmd say-hello4
   "Say hello to x. Return a number."
   [String String] ;; this works. Probably a boxing error.
@@ -205,3 +301,6 @@
   [x & y]
   (message "Hi, " x " from Arcadia!")
   \a)
+
+(defn ^String wat [^String s]
+  (str s " wat?"))
