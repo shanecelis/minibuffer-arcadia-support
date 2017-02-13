@@ -30,43 +30,9 @@
 
   (:import
    [UnityEngine Time Mathf Debug]
-   [seawisphunter.minibuffer Minibuffer Command]))
+   [seawisphunter.minibuffer Minibuffer Command Prompt]))
 
 ;(log "minibuffer.lisp.core reloaded")
-
-;; gen-delegate, generate-generic-delegate, sys-func, and sys-action taken from
-;; core-clr.clj and reworked from macros to be functions.
-
-(defn- my-gen-delegate
-  [type f]
-	(clojure.lang.GenDelegate/Create type f))
-
-
-;; (clojure.string/join "," coll) will substitute for str-join, I think.
-(defn- str-join    ;; clojure.string not yet loaded
-  [coll]
-  (loop [sb (StringBuilder. (str (first coll)))
-        more (next coll)]
-        (if more
-            (recur (-> sb (.Append ",") (.Append (str (first more))))
-                   (next more))
-                   (str sb))))
-
-(defn- my-generate-generic-delegate
-  [typename typesyms f]
-  (let [types (map (fn [tsym] (clojure.lang.CljCompiler.Ast.HostExpr/MaybeType tsym false)) typesyms)
-        ftype (symbol (str typename "`" (count types) "[" (str-join types) "]"))]
-       (my-gen-delegate ftype f)))
-
-(defn- my-sys-func
-  "Translates to a gen-delegate for a System.Func<,...> call"
-  [typesyms f]
-  (my-generate-generic-delegate "System.Func" typesyms f))
-
-(defn- my-sys-action
-  "Translates to a gen-delegate for a System.Action<,...> call"
-  [typesyms f]
-  (my-generate-generic-delegate "System.Action" typesyms f))
 
 (defn do-with-minibuffer
   "Run (f Minibuffer/instance) when Minibuffer/instance is available.
@@ -75,7 +41,7 @@
   [f]
   (if (nil? Minibuffer/instance)
       (do
-        ;(log "defering do-with-minibuffer")
+        (log "defering do-with-minibuffer")
         (Minibuffer/OnStart (gen-delegate Action [] (f Minibuffer/instance))) )
     (f Minibuffer/instance)))
 
@@ -94,6 +60,10 @@
   arg. An Action is created if there are no typeargs or args."
     [typeargs args f]
     (cond
+     (some nil? typeargs)                    (throw
+                                              (ArgumentException.
+                                               (str "There are nils in typeargs: "
+                                                    (pr-str typeargs))))
      (some #{'&} args)                       (throw
                                               (ArgumentException. "Cannot have variable length arguments '&' in command."))
      (= (count typeargs) (+ 1 (count args))) `(sys-func ~typeargs ~args (~f ~@args))
@@ -103,20 +73,6 @@
                    (str "Typeargs and args must be equal length or typeargs may have "
                         "one more element at the end to represent its return type.")))))
 
-(defn- my-make-delegate
-    "Creates a delegate that may be a Func<...>, Action<...>, or Action based on
-  typeargs and args. A Func<...> is created if there is one more typearg than
-  arg. An Action is created if there are no typeargs or args."
-  [typeargs args f]
-  (cond
-   (some #{'&} args)                       (throw
-                                            (ArgumentException. "Cannot have variable length arguments '&' in command."))
-   (= (count typeargs) (+ 1 (count args))) (my-sys-func typeargs f))
-   (empty? args)                           (my-gen-delegate Action f)
-   (= (count typeargs) (count args))       (my-sys-action typeargs f))
-   :else (throw (ArgumentException.
-                 (str "Typeargs and args must be equal length or typeargs may have "
-                      "one more element at the end to represent its return type.")))))
 
 (defmacro separate-types
   "Given a function signature with type annotations do the following:
@@ -142,47 +98,107 @@
                     (conj (:typeargs h#) (:typeresult h#))
                   (:typeargs h#))))
 
+(defn- gen-setter
+  ([map key]
+        (gen-setter map key (name key)))
+  ([map key property-name]
+        `(~(symbol (str ".set_" property-name)) (~key ~map nil))))
+
+(defn snakes-to-camels [s]
+  (if (nil? s)
+      nil
+    (clojure.string/replace s #"-([a-z])" #(clojure.string/upper-case (%1 1)))))
+
+(defmacro make-map-constructor [make-name type keys]
+          `(defn ~make-name [~'attrs]
+             (doto (new ~type)
+                   ~@(map (fn [k] (gen-setter
+                                   'attrs
+                                   k
+                                   (snakes-to-camels (name k)))) keys))))
+
+(defmacro make-map-constructor- [make-name type keys]
+          `(defn- ~make-name [~'attrs]
+             (doto (new ~type)
+                   ~@(map (fn [k] (gen-setter
+                                   'attrs
+                                   k
+                                   (snakes-to-camels (name k)))) keys))))
+
+(defn- select-prompt-attrs [map]
+  (select-keys
+   map
+   [:prompt :input :history :completer :require-match :require-coerce :completions :ignore]))
+
+(make-map-constructor-
+ make-prompt-
+ Prompt
+ [:prompt :input :history :completer :require-match :require-coerce :completions :ignore])
+
+(defn make-prompt [attrs]
+  (let [p-attrs (select-prompt-attrs attrs)]
+       (if (empty? p-attrs)
+           nil                               ; No prompt if nil.
+         (make-prompt- (assoc p-attrs
+                              :completions
+                              (if-let [comps (:completions p-attrs nil)]
+                                      (into-array String comps)))))))
+
+(make-map-constructor-
+ make-command
+ Command
+ [:name :description :brief-description :group-name :hidden :keymap :key-sequence :signature :parameter-names :prompts])
+
+
+#_(clojure.core/defn-
+ make-command
+ [attrs]
+ (clojure.core/doto
+  (new Command)
+  (.set_name (:name attrs nil))
+  (.set_parameterNames (:parameter-names attrs nil))
+  ;; (log ":prompts" (:prompts attrs nil))
+  ;; (log ":prompts type" (type (:prompts attrs nil)))
+  ;; (log ":prompts count" (count (:prompts attrs nil)))
+  (.set_prompts (:prompts attrs nil))
+  ))
+
 (defn register-command
   "Register a Minibuffer command."
   [cmd-name-or-attrs typeargs args f]
-  (let [attrs (if (string? cmd-name-or-attrs)
-                  {:name cmd-name-or-attrs}
-                  cmd-name-or-attrs)]
+  (let [attrs* (if (string? cmd-name-or-attrs)
+                   {:name cmd-name-or-attrs}
+                   cmd-name-or-attrs)
+       attrs (assoc
+              attrs*
+              :parameter-names
+              (if-let [pnames (:parameter-names attrs* nil)]
+                      (into-array String
+                                  (into ["closure"]
+                                        pnames)))
+              :prompts
+              (if-let [ps (:prompts attrs* nil)]
+                      (into-array Prompt
+                                  ;; add a nil for the closure param
+                                  (conj (map make-prompt ps)
+                                        nil))))]
+   (log "register prompt type" (type (:prompts attrs)))
    (with-minibuffer
     m
     (.RegisterCommand m
-                      (doto (Command. (:name attrs nil))
+                      (make-command attrs)
+                      #_(doto (Command. (:name attrs nil))
                             (.set_description (:description attrs nil))
                             (.set_keySequence (:keysequence attrs nil))
                             (.set_signature   (:signature attrs nil))
-                            (.set_parameterNames
+                            #_(.set_parameterNames
                              (if (:parameter-names attrs nil)
                                  ;; There's an extra "closure "parameter in the
                                  ;; generated method.
                                  (into-array String (into ["closure"]
                                                           (:parameter-names attrs nil)))
                                nil)))
-                      (eval `(make-delegate ~typeargs ~args ~f))))))
-(defn my-register-command
-  "Register a Minibuffer command."
-  [cmd-name-or-attrs typeargs args f]
-  (let [attrs (if (string? cmd-name-or-attrs)
-                  {:name cmd-name-or-attrs}
-                  cmd-name-or-attrs)]
-   (with-minibuffer
-    m
-    (.RegisterCommand m
-                      (doto (Command. (:name attrs nil))
-                            (.set_description (:description attrs nil))
-                            (.set_keySequence (:keysequence attrs nil))
-                            (.set_signature   (:signature attrs nil))
-                            (.set_parameterNames
-                             (if (:parameter-names attrs nil)
-                                 ;; There's an extra "closure "parameter in the
-                                 ;; generated method.
-                                 (into-array String (into ["closure"]
-                                                          (:parameter-names attrs nil)))
-                               nil)))
+
                       (eval `(make-delegate ~typeargs ~args ~f))))))
 
 (defmacro defcmd
@@ -191,7 +207,7 @@
   returns. Minibuffer makes extensive use of the type information. Consider the
   following example.
 
-  e.g. (defcmd ^Int64 say-hello \"Says hello. Return int.\" 
+  e.g. (defcmd ^Int64 say-hello \"Says hello. Return int.\"
           [^String x]
           (message \"Hello, \" x)
           1)
@@ -200,21 +216,31 @@
   additionally be run interactively by typing `M-x say-hello` which will then
   prompt for a string. Functions with a String output will be `message`'d
   automatically. Functions with a IEnumerator output will be run as coroutines."
-  [fn-name docstring args & body]
-  `(do
-       (defn ~fn-name
-         ~docstring
-         ~args
-         ~@body)
-       (register-command { :name ~(name fn-name)
-                         :description ~docstring
-                         :signature ~(str "(defn " (name fn-name) " ["
-                                         (clojure.string/join " " (map name args)) "] ...)")
-                         :parameter-names ~(mapv name args) }
-                         (separate-types-oldform ~fn-name ~args)
-                         '~args
-                         '~fn-name)
-     #'~fn-name))
+  [fn-name & defnargs]
+  (let [[docstring args & body] (if (string? (first defnargs))
+                                    defnargs
+                                  (conj (seq defnargs) nil))]
+       `(do
+        (defn ~fn-name
+          ~@defnargs)
+            (register-command {
+                              :name ~(name fn-name)
+                              :description ~docstring
+                              :signature ~(str "(defn " (name fn-name) " ["
+                                            (clojure.string/join " "
+                                              (map name args)) "] ...)")
+                              :parameter-names ~(mapv name args)
+                              :prompts ~(let [prompts
+                                           (->> args
+                                                (mapv meta)
+                                                (mapv select-prompt-attrs))]
+                                                   (if (every? empty? prompts)
+                                                       nil
+                                                     prompts))}
+                          (separate-types-oldform ~fn-name ~args)
+                          '~args
+                          '~fn-name)
+      #'~fn-name)))
 
 (defn message
   "Print a message to the echo area."

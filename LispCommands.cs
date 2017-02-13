@@ -7,14 +7,9 @@ using Arcadia;
 [CommandGroup("lisp", autoRegister = false)]
 public class LispCommands : MonoBehaviour {
 
-	// Use this for initialization
-	// void Start () {
-  //   Minibuffer.OnStart(() => {
-  //       Minibuffer.instance.GetKeymap("user")["M-:"] = "eval-expression";
-  //     });
-	// }
   void Start() {
     RT.load("minibuffer/lisp/core");
+    RT.load("minibuffer/lisp/example");
     Minibuffer.OnStart((m) => m.Register(this));
   }
 
@@ -22,7 +17,6 @@ public class LispCommands : MonoBehaviour {
   public void EvalExpression([Prompt("Eval: ",
                                      history = "expression")]
                              string expression) {
-    // FIXME: I should use a real environment.
     var result = RT.var("minibuffer.lisp.core", "repl-eval-print-string")
       .invoke(expression)
       .ToString()
