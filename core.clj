@@ -36,6 +36,39 @@
 
 ;; This is just me trying to debug do-with-minibuffer
 (defonce defer-count 0)
+;; gen-delegate, generate-generic-delegate, sys-func, and sys-action taken from
+;; core-clr.clj and reworked from macros to be functions.
+
+(defn- my-gen-delegate
+  [type f]
+	(clojure.lang.GenDelegate/Create type f))
+
+
+;; (clojure.string/join "," coll) will substitute for str-join, I think.
+(defn- str-join    ;; clojure.string not yet loaded
+  [coll]
+  (loop [sb (StringBuilder. (str (first coll)))
+        more (next coll)]
+        (if more
+            (recur (-> sb (.Append ",") (.Append (str (first more))))
+                   (next more))
+                   (str sb))))
+
+(defn- my-generate-generic-delegate
+  [typename typesyms f]
+  (let [types (map (fn [tsym] (clojure.lang.CljCompiler.Ast.HostExpr/MaybeType tsym false)) typesyms)
+        ftype (symbol (str typename "`" (count types) "[" (str-join types) "]"))]
+       (my-gen-delegate ftype f)))
+
+(defn- my-sys-func
+  "Translates to a gen-delegate for a System.Func<,...> call"
+  [typesyms f]
+  (my-generate-generic-delegate "System.Func" typesyms f))
+
+(defn- my-sys-action
+  "Translates to a gen-delegate for a System.Action<,...> call"
+  [typesyms f]
+  (my-generate-generic-delegate "System.Action" typesyms f))
 
 (defn do-with-minibuffer
   "Run (f Minibuffer/instance) when Minibuffer/instance is available.
@@ -65,31 +98,20 @@
                    (str "Typeargs and args must be equal length or typeargs may have "
                         "one more element at the end to represent its return type.")))))
 
-(defmacro defcmd
-    "Define a Minibuffer command and function. The docstring is required.
-  The typeargs define what C# types the function accepts and optionally what it
-  returns. Minibuffer makes extensive use of the type information. Consider the
-  following example.
-
-  e.g. (defcmd say-hello \"Says hello. Return int.\" [String Int32]
-          [x]
-          (message \"Hello, \" x)
-          1)
-
-  The function `say-hello` be defined as if it were a normal `defn` but it may
-  additionally be run interactively by typing `M-x say-hello` which will then
-  prompt for a string. Functions with a String output will be `message`'d
-  automatically. Functions with a IEnumerator output will be run as coroutines."
-  [fn-name docstring typeargs args & body]
-  `(do (defn ~fn-name
-         ~docstring
-         ~args ;; add type annotation?
-         ~@body)
-       (with-minibuffer ~'m
-                        (.RegisterCommand ~'m (doto (Command. ~(name fn-name))
-                                                    (.set_description ~docstring))
-                                          (make-delegate ~typeargs ~args ~fn-name)))
-     #'~fn-name))
+(defn- my-make-delegate
+    "Creates a delegate that may be a Func<...>, Action<...>, or Action based on
+  typeargs and args. A Func<...> is created if there is one more typearg than
+  arg. An Action is created if there are no typeargs or args."
+  [typeargs args f]
+  (cond
+   (some #{'&} args)                       (throw
+                                            (ArgumentException. "Cannot have variable length arguments '&' in command."))
+   (= (count typeargs) (+ 1 (count args))) (my-sys-func typeargs f))
+   (empty? args)                           (my-gen-delegate Action f)
+   (= (count typeargs) (count args))       (my-sys-action typeargs f))
+   :else (throw (ArgumentException.
+                 (str "Typeargs and args must be equal length or typeargs may have "
+                      "one more element at the end to represent its return type.")))))
 
 (defmacro separate-types [f args]
           `{:typeargs (->> '~args
@@ -108,7 +130,30 @@
                 (if (:typeresult h#)
                     (conj (:typeargs h#) (:typeresult h#))
                   (:typeargs h#))))
+
 (defn register-command
+  "Register a Minibuffer command."
+  [cmd-name-or-attrs typeargs args f]
+  (let [attrs (if (string? cmd-name-or-attrs)
+                  {:name cmd-name-or-attrs}
+                  cmd-name-or-attrs)]
+   (with-minibuffer
+    m
+    (.RegisterCommand m
+                      (doto (Command. (:name attrs nil))
+                            (.set_description (:description attrs nil))
+                            (.set_keySequence (:keysequence attrs nil))
+                            (.set_signature   (:signature attrs nil))
+                            (.set_parameterNames
+                             (if (:parameter-names attrs nil)
+                                 ;; There's an extra "closure "parameter in the
+                                 ;; generated method.
+                                 (into-array String (into ["closure"]
+                                                          (:parameter-names attrs nil)))
+                               nil)))
+                      (eval `(make-delegate ~typeargs ~args ~f))))))
+(defn my-register-command
+  "Register a Minibuffer command."
   [cmd-name-or-attrs typeargs args f]
   (let [attrs (if (string? cmd-name-or-attrs)
                   {:name cmd-name-or-attrs}
