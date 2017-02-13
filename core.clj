@@ -32,10 +32,8 @@
    [UnityEngine Time Mathf Debug]
    [seawisphunter.minibuffer Minibuffer Command]))
 
-(log "minibuffer.lisp.core reloaded")
+;(log "minibuffer.lisp.core reloaded")
 
-;; This is just me trying to debug do-with-minibuffer
-(defonce defer-count 0)
 ;; gen-delegate, generate-generic-delegate, sys-func, and sys-action taken from
 ;; core-clr.clj and reworked from macros to be functions.
 
@@ -73,20 +71,27 @@
 (defn do-with-minibuffer
   "Run (f Minibuffer/instance) when Minibuffer/instance is available.
 
-   FIXME: I don't think this works currently."
+   FIXME: I don't think defering works currently. I'm not sure any state can be saved when hitting stop then play in Unity."
   [f]
   (if (nil? Minibuffer/instance)
       (do
-          (def defer-count (inc defer-count))
-          (log "defering with-minibuffer")
+        ;(log "defering do-with-minibuffer")
         (Minibuffer/OnStart (gen-delegate Action [] (f Minibuffer/instance))) )
     (f Minibuffer/instance)))
 
 (defmacro with-minibuffer
+  "Minibuffer/instance is only available when a scene with Minibuffer is running. This form will defer execution until such an instance is available.
+
+  (with-minibuffer minibuffer
+    (.Message minibuffer \"Minibuffer instance available!\"))"
     [minibuffer-var & body]
     `(do-with-minibuffer (fn [~minibuffer-var] ~@body)))
 
+;; I'd really prefer if this weren't a macro.  Seems possible.
 (defmacro make-delegate
+  "Creates a delegate that may be a Func<...>, Action<...>, or Action based on
+  typeargs and args. A Func<...> is created if there is one more typearg than
+  arg. An Action is created if there are no typeargs or args."
     [typeargs args f]
     (cond
      (some #{'&} args)                       (throw
@@ -113,19 +118,25 @@
                  (str "Typeargs and args must be equal length or typeargs may have "
                       "one more element at the end to represent its return type.")))))
 
-(defmacro separate-types [f args]
+(defmacro separate-types
+  "Given a function signature with type annotations do the following:
+
+  (separate-types ^Int64 do-it [^String a ^Object b c])
+    -> {:typeargs [String Object nil] :typeresult Int64}"
+  [f args]
           `{:typeargs (->> '~args
                            (mapv meta)
                            (mapv :tag))
           :typeresult (:tag (meta '~f))})
 
-;; (defmacro separate-types-oldform [f args]
-;;           `(let [{:keys [typeargs# typeresult#]} (separate-types ~f ~args)]
-;;                 (if typeresult#
-;;                     (conj typeargs# typeresult#)
-;;                   typeargs#)))
+(defmacro separate-types-oldform
+  "Given a function signature with type annotations do the following:
 
-(defmacro separate-types-oldform [f args]
+  (separate-types ^Int64 do-it [^String a ^Object b c])
+    -> [String Object nil Int64]
+
+  This is suitable for input into the macro make-delegate."
+  [f args]
           `(let [h# (separate-types ~f ~args)]
                 (if (:typeresult h#)
                     (conj (:typeargs h#) (:typeresult h#))
@@ -174,7 +185,7 @@
                                nil)))
                       (eval `(make-delegate ~typeargs ~args ~f))))))
 
-(defmacro defcmd2
+(defmacro defcmd
     "Define a Minibuffer command and function. The docstring is required.
   The typeargs define what C# types the function accepts and optionally what it
   returns. Minibuffer makes extensive use of the type information. Consider the
@@ -207,8 +218,8 @@
 
 (defn message
   "Print a message to the echo area."
-  [& strings] ;; or concatenate or format?
-  (let [msg (apply str strings)]
+  [& strings]
+  (let [msg (apply str strings)] ; or concatenate or format?
        (with-minibuffer m
                         (.Message m msg))
        msg))
@@ -216,7 +227,11 @@
 ;; Thanks, Joseph (@selfsame), for the repl environment tip!
 (def repl-env (atom (arcadia.repl/env-map)))
 
-(defn repl-eval-print-string [s]
+(defn repl-eval-print-string
+  "This repl is used by the eval-expression command.
+
+  (def result-string (repl-eval-print-string \"(+ 1 2)\"))"
+  [s]
   (let [{:keys [result env]} (arcadia.repl/repl-eval-print repl-env s)]
        (reset! repl-env env)
        result))
