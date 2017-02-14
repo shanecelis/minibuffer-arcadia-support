@@ -26,8 +26,8 @@
 
 (ns minibuffer.lisp.core
     (:use arcadia.core
-          arcadia.repl) ;; use or require?  I don't know the difference.
-
+          arcadia.repl
+          clojure.string) ;; use or require?  I don't know the difference.
   (:import
    [UnityEngine Time Mathf Debug]
    [seawisphunter.minibuffer Minibuffer Command Prompt]))
@@ -101,36 +101,36 @@
 (defn- gen-setter
   ([map key]
         (gen-setter map key (name key)))
-  ([map key property-name]
-        `(~(symbol (str ".set_" property-name)) (~key ~map nil))))
+  ([map key property-name inst]
+        `(if-let [v# (~key ~map nil)]
+                 (~(symbol (str ".set_" property-name)) ~inst v#))))
 
 (defn snakes-to-camels [s]
   (if (nil? s)
       nil
-    (clojure.string/replace s #"-([a-z])" #(clojure.string/upper-case (%1 1)))))
+    (replace s #"-([a-z])" #(upper-case (%1 1)))))
 
-(defmacro make-map-constructor [make-name type keys]
-          `(defn ~make-name [~'attrs]
-             (doto (new ~type)
-                   ~@(map (fn [k] (gen-setter
-                                   'attrs
-                                   k
-                                   (snakes-to-camels (name k)))) keys))))
-
-(defmacro make-map-constructor- [make-name type keys]
-          `(defn- ~make-name [~'attrs]
-             (doto (new ~type)
-                   ~@(map (fn [k] (gen-setter
-                                   'attrs
-                                   k
-                                   (snakes-to-camels (name k)))) keys))))
+(defmacro make-map-constructor
+    ([make-name type keys]
+                `(make-map-constructor defn ~make-name ~type ~keys))
+  ([defn-type make-name type keys]
+              (let [inst (gensym 'instance)]
+                   `(~defn-type ~make-name [~'attrs]
+                            (let [~inst (new ~type)]
+                                 ~@(map (fn [k] (gen-setter
+                                                 'attrs
+                                                 k
+                                                 (snakes-to-camels (name k))
+                                                 inst)) keys)
+                                 ~inst)))))
 
 (defn- select-prompt-attrs [map]
   (select-keys
    map
    [:prompt :input :history :completer :require-match :require-coerce :completions :ignore]))
 
-(make-map-constructor-
+(make-map-constructor
+ defn-
  make-prompt-
  Prompt
  [:prompt :input :history :completer :require-match :require-coerce :completions :ignore])
@@ -144,7 +144,8 @@
                               (if-let [comps (:completions p-attrs nil)]
                                       (into-array String comps)))))))
 
-(make-map-constructor-
+(make-map-constructor
+ defn-
  make-command
  Command
  [:name :description :brief-description :group-name :hidden :keymap :key-sequence :signature :parameter-names :prompts])
@@ -227,7 +228,7 @@
                               :name ~(name fn-name)
                               :description ~docstring
                               :signature ~(str "(defn " (name fn-name) " ["
-                                            (clojure.string/join " "
+                                            (join " "
                                               (map name args)) "] ...)")
                               :parameter-names ~(mapv name args)
                               :prompts ~(let [prompts
@@ -261,3 +262,13 @@
   (let [{:keys [result env]} (arcadia.repl/repl-eval-print repl-env s)]
        (reset! repl-env env)
        result))
+
+
+;; This is equivalent to the C# coded "eval-expression" command
+;; in LispCommands.cs. That's why this is commented out.
+;;
+;; (defcmd eval-expression
+;;   "Evaluate an expression and show its result in the echo-area."
+;;   [ ^{:prompt "Eval: " :history "expression" :key-sequence "M-;"}
+;;     ^String expression]
+;;   (message (trim (repl-eval-print-string expression))))

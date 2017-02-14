@@ -267,7 +267,7 @@
 (use 'clojure.pprint)
 (pprint (macroexpand-1 '(make-map-constructor make-prompt Prompt [:prompt :input :history :completer :require-match :require-coerce ])))
 (macroexpand-1 '(make-map-constructor make-prompt Prompt [:prompt ]))
-(pprint (macroexpand-1 '(make-map-constructor-
+(pprint (macroexpand '(make-map-constructor
                          make-command
                          Command
                          [:name :description :brief-description :group-name :hidden :keymap :key-sequence :signature :parameter-names :prompts])))

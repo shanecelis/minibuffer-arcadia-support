@@ -32,8 +32,14 @@
   (message "Hi, " x "!")
   1)
 
-(defcmd clojure-is [^String ^{:prompt "Clojure is... " :completions ["good" "the best!" "has too many parens"]} x]
-  (message x)
+(defcmd clojure-is
+  [
+  ^{:prompt "Clojure is... "
+  :completions ["good" "the best!" "has too many parens"]
+  :require-match true                   ; This is required to force a match on RET.
+  ^String
+  x]
+  (message "clojure-is " (pr-str x))
   (if-not (= x "has too many parens")
       (message "Yes, it is.")
     (message "Wrong. It's the best!")))
