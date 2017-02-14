@@ -26,7 +26,7 @@ public class LispCommands : MonoBehaviour {
 
    ```
    */
-  [Command("eval-expression", keySequence = "M-:"
+  [Command("eval-expression", keySequence = "M-:",
            description = "Evaluates a Clojure expression and shows result.")]
   public void EvalExpression([Prompt("Eval: ",
                                      history = "expression")]
