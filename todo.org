@@ -11,5 +11,6 @@
     Maybe add a new delegate type or types to handle it?  How 'bout just adding that info to Command?
   - [ ] The describe-command should show it defined in Clojure.
   - [ ] How to add Prompt info to parameters?
+  - [ ] add keybinding function
     
     Use CommandInfo, maybe CustomCommandInfo for parameters and custom signature

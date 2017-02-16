@@ -10,6 +10,12 @@ public class LispCommands : MonoBehaviour {
   void Start() {
     RT.load("minibuffer/lisp/core");
     RT.load("minibuffer/lisp/example");
+
+    var result = RT.var("minibuffer.lisp.core", "repl-setup")
+      .invoke();
+
+    //EvalExpression("(minibuffer.lisp.core/repl-setup)");
+    // Should I do a (use 'minibuffer.lisp.core 'arcadia.core) here too?
     Minibuffer.OnStart((m) => m.Register(this));
   }
 
@@ -23,7 +29,6 @@ public class LispCommands : MonoBehaviour {
       ^String expression]
 
      (message (trim (repl-eval-print-string expression))))
-
    ```
    */
   [Command("eval-expression", keyBinding = "M-:",
@@ -37,4 +42,18 @@ public class LispCommands : MonoBehaviour {
       .Trim();
     Minibuffer.instance.Message(result);
   }
+
+
+  // [Command("describe-function", keyBinding = "C-h f",
+  //          description = "Show documentation for a Clojure function.")]
+  // public void DescribeFunction([Prompt("Describe function: ",
+  //                                      history = "function")]
+  //                               string function) {
+  //   // This was actually easier to write in Clojure.
+  //   var result = RT.var("minibuffer.lisp.core", "doc-fn")
+  //     .invoke(RT.var("clojure.core", "symbol").invoke(function))
+  //     .ToString()
+  //     .Trim();
+  //   Minibuffer.instance.Message(result);
+  // }
 }

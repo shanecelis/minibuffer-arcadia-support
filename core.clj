@@ -27,10 +27,10 @@
 (ns minibuffer.lisp.core
     (:use arcadia.core
           arcadia.repl
-          clojure.string) ;; use or require?  I don't know the difference.
+          ) ;; use or require?  I don't know the difference.
   (:import
    [UnityEngine Time Mathf Debug]
-   [seawisphunter.minibuffer Minibuffer Command Prompt]))
+   [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter]))
 
 ;(log "minibuffer.lisp.core reloaded")
 
@@ -110,7 +110,7 @@
   [s]
   (if (nil? s)
       nil
-    (replace s #"-([a-z])" #(upper-case (%1 1)))))
+    (clojure.string/replace s #"-([a-z])" #(clojure.string/upper-case (%1 1)))))
 
 (defmacro make-map-constructor
     "Construct an object of type using a map that sets its various properties.
@@ -158,7 +158,7 @@ Use constructor:
 (make-map-constructor
  ^:private make-command
  Command
- [:name :description :brief-description :group-name :hidden :keymap :key-binding :signature :parameter-names :prompts])
+ [:name :description :brief-description :group-name :hidden :keymap :key-binding :signature :parameter-names :prompts :defined-in])
 
 (defn register-command
   "Register a Minibuffer command."
@@ -178,7 +178,8 @@ Use constructor:
                       (into-array Prompt
                                   ;; add a nil for the closure param
                                   (conj (map make-prompt ps)
-                                        nil))))]
+                                        nil)))
+              )]
                                         ;; (log "register prompt type" (type (:prompts attrs)))
    (with-minibuffer
     m
@@ -216,8 +217,11 @@ Use constructor:
             (register-command {
                               :name ~(name fn-name)
                               :description ~docstring
+                              :key-binding ~(:key-binding (meta fn-name) nil)
+                              :defined-in
+                              ~(format "namespace %s" (ns-name *ns*))
                               :signature ~(str "(defn " (name fn-name) " ["
-                                            (join " "
+                                            (clojure.string/join " "
                                               (map name args)) "] ...)")
                               :parameter-names ~(mapv name args)
                               :prompts ~(let [prompts
@@ -239,7 +243,7 @@ Use constructor:
                     (.Message m msg))
    msg)
   ([fmt & strings]
-        (let [msg (apply format fmt strings)] 
+        (let [msg (apply format fmt strings)]
              (message msg)
              )))
 
@@ -255,6 +259,87 @@ Use constructor:
        (reset! repl-env env)
        result))
 
+
+
+
+
+(defn get-keymap
+  "Return a keymap of the given name or null if it doesn't exist. May opt to
+  create one if it doesn't exist."
+  ([name createIfNecessary]
+         (if Minibuffer/instance
+             (.GetKeymap Minibuffer/instance name createIfNecessary)))
+  ([name]
+   (get-keymap name false)))
+
+
+(defn get-buffer
+  "Return a buffer of the given name or null if it doesn't exist. May opt to
+  create one if it doesn't exist."
+  ([name createIfNecessary]
+         (if Minibuffer/instance
+             (.GetBuffer Minibuffer/instance name createIfNecessary)))
+  ([name]
+   (get-buffer name false)))
+
+(defn get-key-binding
+  "Return the command bound to key-sequence if any."
+  [keymap key-sequence]
+  (.get_Item keymap key-sequence))
+
+(defn set-key-binding
+  "Bind the key-sequence to the command."
+  [keymap key-sequence command-name]
+  (.set_Item keymap key-sequence command-name))
+
+(defn define-key
+  "Bind the key-sequence to the command in a particular keymap."
+  [keymap-or-name key-sequence command-name]
+  (let [keymap (if (string? keymap-or-name)
+                   (get-keymap keymap-or-name)
+                 keymap-or-name)]
+                 (if Minibuffer/instance
+                     (set-key-binding keymap key-sequence command-name))))
+
+;; http://stackoverflow.com/questions/9273333/in-clojure-how-to-apply-a-macro-to-a-list
+(defmacro functionize
+    ([macro]
+     `(fn [& args#] (eval (cons '~macro args#))))
+  ([name macro]
+         `(defn ~name [& args#] (eval (cons '~macro args#)))))
+(functionize doc-fn clojure.repl/doc)
+
+(defcmd ^{:key-binding "C-h f"} describe-function
+  [^String ^{:prompt "Describe function: " :history "function" :completer "function" :require-match true} function]
+  (message (with-out-str (eval `(clojure.repl/doc ~(symbol function))))))
+
+(defcmd ^{:key-binding "C-h s"} describe-source
+  [^String ^{:prompt "Describe source: " :history "function" :completer "function" :require-match true} function]
+  (message (with-out-str (eval `(clojure.repl/source ~(symbol function))))))
+
+
+(defn make-func-completer [completer-fn]
+  (CompleterEntity. (reify ICompleter
+                           (Complete [this pattern]
+                                     (completer-fn pattern))
+                           (Coerce [this item desired-type]
+                                   item))))
+
+(defn make-list-completer [lst]
+  (CompleterEntity. (ListCompleter. (into-array String lst))))
+
+(defn add-completer [name completer]
+  (.Add (.completers Minibuffer/instance) name completer))
+
+
+(def fn-completer-namespaces ['arcadia.core 'minibuffer.lisp.core])
+
+(defn repl-setup
+  "Called after minibuffer.core.lisp is loaded. Allows for a little setup like
+  using namespaces."
+  []
+  (repl-eval-print-string "(use 'minibuffer.lisp.core 'arcadia.core)")
+  (add-completer "function" (make-list-completer (map name (mapcat clojure.repl/dir-fn fn-completer-namespaces)))))
 
 ;; This is equivalent to the C# coded "eval-expression" command
 ;; in LispCommands.cs.

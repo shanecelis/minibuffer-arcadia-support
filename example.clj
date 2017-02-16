@@ -24,7 +24,7 @@
   (message "Hi, %s!" x)
   1)
 
-(pprint (macroexpand-1 '(defcmd ^Int64 say-hello3 [^String x]
+(pprint (macroexpand-1 '(defcmd ^Int64 ^{:key-binding "C-h f"} say-hello3 [^String x]
                    (message "Hi, %s!" x)
                    1)))
 
