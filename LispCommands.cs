@@ -19,14 +19,14 @@ public class LispCommands : MonoBehaviour {
    ```
    (defcmd eval-expression
      "Evaluate an expression and show its result in the echo-area."
-     [^{:prompt "Eval: " :history "expression" :key-sequence "M-;"}
+     [^{:prompt "Eval: " :history "expression" :key-binding "M-;"}
       ^String expression]
 
      (message (trim (repl-eval-print-string expression))))
 
    ```
    */
-  [Command("eval-expression", keySequence = "M-:",
+  [Command("eval-expression", keyBinding = "M-:",
            description = "Evaluates a Clojure expression and shows result.")]
   public void EvalExpression([Prompt("Eval: ",
                                      history = "expression")]

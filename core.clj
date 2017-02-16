@@ -158,7 +158,7 @@ Use constructor:
 (make-map-constructor
  ^:private make-command
  Command
- [:name :description :brief-description :group-name :hidden :keymap :key-sequence :signature :parameter-names :prompts])
+ [:name :description :brief-description :group-name :hidden :keymap :key-binding :signature :parameter-names :prompts])
 
 (defn register-command
   "Register a Minibuffer command."
@@ -261,6 +261,6 @@ Use constructor:
 ;;
 ;; (defcmd eval-expression
 ;;   "Evaluate an expression and show its result in the echo-area."
-;;   [ ^{:prompt "Eval: " :history "expression" :key-sequence "M-;"}
+;;   [ ^{:prompt "Eval: " :history "expression" :key-binding "M-;"}
 ;;     ^String expression]
 ;;   (message (trim (repl-eval-print-string expression))))

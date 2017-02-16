@@ -270,4 +270,4 @@
 (pprint (macroexpand '(make-map-constructor
                          make-command
                          Command
-                         [:name :description :brief-description :group-name :hidden :keymap :key-sequence :signature :parameter-names :prompts])))
+                         [:name :description :brief-description :group-name :hidden :keymap :key-binding :signature :parameter-names :prompts])))
