@@ -12,24 +12,24 @@
   (message "Hi!"))
 
 (defcmd say-hello "Say hello to x. Return a number." [^String x]
-  (message "Hi, " x "!")
+  (message "Hi, %s!" x)
   1)
 
 ;; no docstring
 (defcmd say-hello2 [^String x]
-  (message "Hi, " x "!")
+  (message "Hi, %s!" x)
   1)
 
 (defcmd ^Int64 say-hello3 [^String x]
-  (message "Hi, " x "!")
+  (message "Hi, %s!" x)
   1)
 
 (pprint (macroexpand-1 '(defcmd ^Int64 say-hello3 [^String x]
-                   (message "Hi, " x "!")
+                   (message "Hi, %s!" x)
                    1)))
 
 (defcmd ^Int64 say-hello4 [^String ^{:prompt "What's your name? "} x]
-  (message "Hi, " x "!")
+  (message "Hi, %s!" x)
   1)
 
 (defcmd clojure-is
@@ -37,9 +37,10 @@
   ^{:prompt "Clojure is... "
   :completions ["good" "the best!" "has too many parens"]
   :require-match true                   ; This is required to force a match on RET.
+  }
   ^String
   x]
-  (message "clojure-is " (pr-str x))
+  (message "clojure-is %s" (pr-str x))
   (if-not (= x "has too many parens")
       (message "Yes, it is.")
     (message "Wrong. It's the best!")))
@@ -51,16 +52,16 @@
                    (message "Yes, it is.")
                    (message "Wrong. It's the best!")))))
 (pprint (macroexpand-1 '(defcmd ^Int64 say-hello4 [^String ^{:prompt "What's your name? "} x]
-                   (message "Hi, " x "!")
+                   (message "Hi, %s!" x)
                    1)))
 
 
 (macroexpand-1 '(defcmd ^Int64 say-hello4 [^String ^{:prompt "What's your name? "} x]
-   (message "Hi, " x "!")
+   (message "Hi, %s!" x)
    1))
 
 
 
 (macroexpand-1 '(defcmd ^Int64 say-hello4 [^String  x]
-                  (message "Hi, " x "!")
+                  (message "Hi, %s!" x)
                   1))

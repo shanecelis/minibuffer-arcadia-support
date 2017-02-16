@@ -20,14 +20,13 @@ $ git clone git@github.com:shanecelis/minibuffer-arcadia-support.git lisp
 
 ## Usage
 
-This code defines a new Minibuffer command and function.
+This code defines a new Minibuffer command and function called `say-hello`.  Once it has been evaluated, it can be called in Minibuffer by hitting 'M-x say-hello'
 
 ```
-(defcmd say-hello
+(defcmd ^Int64 say-hello
   "Say hello to x. Return a number."
-  [String Int32]
-  [x]
-  (message "Hi, " x " from Arcadia!")
+  [^String name]
+  (message "Hi, %s, from Arcadia!" name)
   2)
 ```
 

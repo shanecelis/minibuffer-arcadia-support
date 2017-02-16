@@ -105,24 +105,32 @@
         `(if-let [v# (~key ~map nil)]
                  (~(symbol (str ".set_" property-name)) ~inst v#))))
 
-(defn snakes-to-camels [s]
+(defn- kebabs-to-camels
+  "Convert from kebab-case to camelCase."
+  [s]
   (if (nil? s)
       nil
     (replace s #"-([a-z])" #(upper-case (%1 1)))))
 
 (defmacro make-map-constructor
-    ([make-name type keys]
-                `(make-map-constructor defn ~make-name ~type ~keys))
-  ([defn-type make-name type keys]
-              (let [inst (gensym 'instance)]
-                   `(~defn-type ~make-name [~'attrs]
-                            (let [~inst (new ~type)]
-                                 ~@(map (fn [k] (gen-setter
-                                                 'attrs
-                                                 k
-                                                 (snakes-to-camels (name k))
-                                                 inst)) keys)
-                                 ~inst)))))
+    "Construct an object of type using a map that sets its various properties.
+
+Create constructor:
+  (make-map-constructor make-command Command [:name :description])
+
+Use constructor:
+  (make-command {:name \"example-cmd\" :description \"Exemplary command\" })
+"
+  [make-name type keys]
+  (let [inst (gensym 'instance)]
+       `(defn ~make-name [~'attrs]
+          (let [~inst (new ~type)]
+               ~@(map (fn [k] (gen-setter
+                               'attrs
+                               k
+                               (kebabs-to-camels (name k))
+                               inst)) keys)
+               ~inst))))
 
 (defn- select-prompt-attrs [map]
   (select-keys
@@ -130,12 +138,15 @@
    [:prompt :input :history :completer :require-match :require-coerce :completions :ignore]))
 
 (make-map-constructor
- defn-
- make-prompt-
+ ^:private make-prompt-
  Prompt
  [:prompt :input :history :completer :require-match :require-coerce :completions :ignore])
 
-(defn make-prompt [attrs]
+(defn make-prompt
+ "Create a Prompt object. Accepts the following attributes:
+
+ [:prompt :input :history :completer :require-match :require-coerce :completions :ignore]"
+  [attrs]
   (let [p-attrs (select-prompt-attrs attrs)]
        (if (empty? p-attrs)
            nil                               ; No prompt if nil.
@@ -145,24 +156,9 @@
                                       (into-array String comps)))))))
 
 (make-map-constructor
- defn-
- make-command
+ ^:private make-command
  Command
  [:name :description :brief-description :group-name :hidden :keymap :key-sequence :signature :parameter-names :prompts])
-
-
-#_(clojure.core/defn-
- make-command
- [attrs]
- (clojure.core/doto
-  (new Command)
-  (.set_name (:name attrs nil))
-  (.set_parameterNames (:parameter-names attrs nil))
-  ;; (log ":prompts" (:prompts attrs nil))
-  ;; (log ":prompts type" (type (:prompts attrs nil)))
-  ;; (log ":prompts count" (count (:prompts attrs nil)))
-  (.set_prompts (:prompts attrs nil))
-  ))
 
 (defn register-command
   "Register a Minibuffer command."
@@ -183,39 +179,32 @@
                                   ;; add a nil for the closure param
                                   (conj (map make-prompt ps)
                                         nil))))]
-   (log "register prompt type" (type (:prompts attrs)))
+                                        ;; (log "register prompt type" (type (:prompts attrs)))
    (with-minibuffer
     m
     (.RegisterCommand m
                       (make-command attrs)
-                      #_(doto (Command. (:name attrs nil))
-                            (.set_description (:description attrs nil))
-                            (.set_keySequence (:keysequence attrs nil))
-                            (.set_signature   (:signature attrs nil))
-                            #_(.set_parameterNames
-                             (if (:parameter-names attrs nil)
-                                 ;; There's an extra "closure "parameter in the
-                                 ;; generated method.
-                                 (into-array String (into ["closure"]
-                                                          (:parameter-names attrs nil)))
-                               nil)))
-
                       (eval `(make-delegate ~typeargs ~args ~f))))))
 
 (defmacro defcmd
-    "Define a Minibuffer command and function. The docstring is required.
-  The typeargs define what C# types the function accepts and optionally what it
-  returns. Minibuffer makes extensive use of the type information. Consider the
-  following example.
+    "Define a Minibuffer command and function.
 
-  e.g. (defcmd ^Int64 say-hello \"Says hello. Return int.\"
-          [^String x]
-          (message \"Hello, \" x)
+  (defcmd name doc-string? [params*] body)
+
+
+  Type annotations should be used on parameters. Minibuffer makes extensive use
+ of the type information. Consider the following example.
+
+  e.g. (defcmd ^Int64
+          say-hello
+          \"Says hello. Return int.\"
+          [^String name]
+          (message \"Hello, %s!\" name)
           1)
 
-  The function `say-hello` be defined as if it were a normal `defn` but it may
-  additionally be run interactively by typing `M-x say-hello` which will then
-  prompt for a string. Functions with a String output will be `message`'d
+  The function `say-hello` will be defined as if it were a normal `defn` but it
+  may additionally be run interactively by typing `M-x say-hello` which will
+  then prompt for a string. Functions with a String output will be `message`'d
   automatically. Functions with a IEnumerator output will be run as coroutines."
   [fn-name & defnargs]
   (let [[docstring args & body] (if (string? (first defnargs))
@@ -245,11 +234,14 @@
 
 (defn message
   "Print a message to the echo area."
-  [& strings]
-  (let [msg (apply str strings)] ; or concatenate or format?
-       (with-minibuffer m
-                        (.Message m msg))
-       msg))
+  ([msg]
+   (with-minibuffer m
+                    (.Message m msg))
+   msg)
+  ([fmt & strings]
+        (let [msg (apply format fmt strings)] 
+             (message msg)
+             )))
 
 ;; Thanks, Joseph (@selfsame), for the repl environment tip!
 (def repl-env (atom (arcadia.repl/env-map)))
@@ -265,7 +257,7 @@
 
 
 ;; This is equivalent to the C# coded "eval-expression" command
-;; in LispCommands.cs. That's why this is commented out.
+;; in LispCommands.cs.
 ;;
 ;; (defcmd eval-expression
 ;;   "Evaluate an expression and show its result in the echo-area."
