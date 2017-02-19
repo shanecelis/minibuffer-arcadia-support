@@ -26,13 +26,10 @@
 
 (ns minibuffer.lisp.core
     (:use arcadia.core
-          arcadia.repl
-          ) ;; use or require?  I don't know the difference.
+          arcadia.repl)
   (:import
    [UnityEngine Time Mathf Debug]
    [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter]))
-
-;(log "minibuffer.lisp.core reloaded")
 
 (defn do-with-minibuffer
   "Run (f Minibuffer/instance) when Minibuffer/instance is available.
@@ -42,6 +39,7 @@
   (if (nil? Minibuffer/instance)
       (do
         (log "defering do-with-minibuffer")
+          ;; This is no longer good.
         (Minibuffer/OnStart (gen-delegate Action [] (f Minibuffer/instance))) )
     (f Minibuffer/instance)))
 
@@ -72,7 +70,6 @@
      :else (throw (ArgumentException.
                    (str "Typeargs and args must be equal length or typeargs may have "
                         "one more element at the end to represent its return type.")))))
-
 
 (defmacro separate-types
   "Given a function signature with type annotations do the following:
@@ -113,7 +110,7 @@
     (clojure.string/replace s #"-([a-z])" #(clojure.string/upper-case (%1 1)))))
 
 (defmacro make-map-constructor
-    "Construct an object of type using a map that sets its various properties.
+  "Construct an object of type using a map that sets its various properties.
 
 Create constructor:
   (make-map-constructor make-command Command [:name :description])
@@ -188,10 +185,9 @@ Use constructor:
                       (eval `(make-delegate ~typeargs ~args ~f))))))
 
 (defmacro defcmd
-    "Define a Minibuffer command and function.
+  "Define a Minibuffer command and function.
 
   (defcmd name doc-string? [params*] body)
-
 
   Type annotations should be used on parameters. Minibuffer makes extensive use
  of the type information. Consider the following example.
@@ -236,16 +232,28 @@ Use constructor:
                           '~fn-name)
       #'~fn-name)))
 
+(defn echo
+  "Print string to the echo area."
+  [str]
+  (with-minibuffer m
+                   (.Echo m str)))
+
 (defn message
-  "Print a message to the echo area."
+  "Print a message to the echo area and log to *Messages* buffer."
   ([msg]
    (with-minibuffer m
                     (.Message m msg))
    msg)
   ([fmt & strings]
         (let [msg (apply format fmt strings)]
-             (message msg)
-             )))
+             (message msg))))
+
+(defn message-or-buffer
+  "Depending on the size of the output, message or use a buffer."
+  [buffer-name msg]
+  (with-minibuffer m
+                   (.MessageOrBuffer m buffer-name msg)))
+
 
 ;; Thanks, Joseph (@selfsame), for the repl environment tip!
 (def repl-env (atom (arcadia.repl/env-map)))
@@ -258,10 +266,6 @@ Use constructor:
   (let [{:keys [result env]} (arcadia.repl/repl-eval-print repl-env s)]
        (reset! repl-env env)
        result))
-
-
-
-
 
 (defn get-keymap
   "Return a keymap of the given name or null if it doesn't exist. May opt to
@@ -302,44 +306,87 @@ Use constructor:
                      (set-key-binding keymap key-sequence command-name))))
 
 ;; http://stackoverflow.com/questions/9273333/in-clojure-how-to-apply-a-macro-to-a-list
+;; It always comes to this.
 (defmacro functionize
-    ([macro]
-     `(fn [& args#] (eval (cons '~macro args#))))
+  "Turn a macro into a function via eval."
+  ([macro]
+   `(fn [& args#] (eval (cons '~macro args#))))
   ([name macro]
-         `(defn ~name [& args#] (eval (cons '~macro args#)))))
-(functionize doc-fn clojure.repl/doc)
+   `(defn ~name [& args#] (eval (cons '~macro args#)))))
 
 (defcmd ^{:key-binding "C-h f"} describe-function
+  "Describe Clojure function."
   [^String ^{:prompt "Describe function: " :history "function" :completer "function" :require-match true} function]
-  (message (with-out-str (eval `(clojure.repl/doc ~(symbol function))))))
+  (message-or-buffer "*doc*" (with-out-str (eval `(clojure.repl/doc ~(symbol function))))))
 
-(defcmd ^{:key-binding "C-h s"} describe-source
-  [^String ^{:prompt "Describe source: " :history "function" :completer "function" :require-match true} function]
-  (message (with-out-str (eval `(clojure.repl/source ~(symbol function))))))
+(defcmd ^{:key-binding "C-h s"} show-source
+  "Show source code if available."
+  [^String ^{:prompt "Show source: " :history "function" :completer "function" :require-match true} function]
+  (message-or-buffer "*source*" (with-out-str (eval `(clojure.repl/source ~(symbol function))))))
 
+(defn make-func-completer
+  "Convert a fn into a ICompleter. The function accepts the current input and
+  returns a list of potential matches (does not have to be sorted).
 
-(defn make-func-completer [completer-fn]
+  e.g. (f \"Sh\") -> (\"Shane\" \"Shawn\" \"Shannon\")"
+  [completer-fn]
   (CompleterEntity. (reify ICompleter
-                           (Complete [this pattern]
-                                     (completer-fn pattern))
+                           (Complete [this input]
+                                     (completer-fn input))
                            (Coerce [this item desired-type]
                                    item))))
 
-(defn make-list-completer [lst]
+(defn make-list-completer
+  "Convert a list of strings into a list-completer."
+  [lst]
   (CompleterEntity. (ListCompleter. (into-array String lst))))
 
-(defn add-completer [name completer]
-  (.Add (.completers Minibuffer/instance) name completer))
+(defmacro into-dict
+    "Convert a map into a particular type of dictionary."
+    [type map]
+  `(let [d# (new ~type)]
+       (doseq [[k# v#] ~map]
+              (.set_Item d# (name k#) v#)
+              ;;(.Add d# (name k#) v#)
+              ;; Add will throw an error if it tries to overwrite an existing key.
+              )
+       d#))
 
+(defn into-dict-string-string
+  "Convert map into a Dictionary<String,String> object."
+  [map]
+  (into-dict |Dictionary`2[String,String]| map))
+
+(defn make-dict-completer
+  "Convert a map into a DictCompleter."
+     [map]
+     (CompleterEntity. (DictCompleter. (into-dict-string-string map))))
+
+(defn set-completer
+  "Add a completer to Minibuffer. Any fn, list, or map will be automatically
+coerced to a completer type unless `:coerce?' false is added to the arguments."
+  [name completer & {:keys [coerce?]
+                     :or {coerce? true}}]
+  (let [c (if coerce?
+              (cond
+               (fn? completer)  (make-func-completer completer)
+               (seq? completer) (make-list-completer completer)
+               (map? completer) (make-dict-completer completer)
+               :default         completer)
+            completer)]
+            ;(.Add (.completers Minibuffer/instance) name c)
+            (.set_Item (.completers Minibuffer/instance) name c)
+            c))
 
 (def fn-completer-namespaces ['arcadia.core 'minibuffer.lisp.core])
 
 (defn repl-setup
-  "Called after minibuffer.core.lisp is loaded. Allows for a little setup like
-  using namespaces."
+  "Called by LispCommands.cs after minibuffer.core.lisp is loaded. Sets up
+  namespaces and completers."
   []
   (repl-eval-print-string "(use 'minibuffer.lisp.core 'arcadia.core)")
-  (add-completer "function" (make-list-completer (map name (mapcat clojure.repl/dir-fn fn-completer-namespaces)))))
+  (set-completer "function"
+                 (map name (mapcat clojure.repl/dir-fn fn-completer-namespaces))))
 
 ;; This is equivalent to the C# coded "eval-expression" command
 ;; in LispCommands.cs.

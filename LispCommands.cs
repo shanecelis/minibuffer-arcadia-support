@@ -40,7 +40,7 @@ public class LispCommands : MonoBehaviour {
       .invoke(expression)
       .ToString()
       .Trim();
-    Minibuffer.instance.Message(result);
+    Minibuffer.instance.MessageOrBuffer("*eval*", result);
   }
 
 
