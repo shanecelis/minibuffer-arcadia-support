@@ -25,6 +25,8 @@
 ;; [1]: https://twitter.com/shanecelis
 
 (ns minibuffer.lisp.core
+    (:require clojure.string
+              clojure.repl)
     (:use arcadia.core
           arcadia.repl)
   (:import
@@ -38,9 +40,9 @@
   [f]
   (if (nil? Minibuffer/instance)
       (do
-        (log "defering do-with-minibuffer")
+          (log "defering do-with-minibuffer")
           ;; This is no longer good.
-        (Minibuffer/OnStart (gen-delegate Action [] (f Minibuffer/instance))) )
+          (Minibuffer/OnStart (gen-delegate Action [] (f Minibuffer/instance))))
     (f Minibuffer/instance)))
 
 (defmacro with-minibuffer
@@ -51,25 +53,68 @@
     [minibuffer-var & body]
     `(do-with-minibuffer (fn [~minibuffer-var] ~@body)))
 
+(defn- generate-generic-type
+  "Like generate-generic-delegate but just provides the type.
+
+e.g. (generate-generic-type 'Dictionary [String String])
+       -> |Dictionary`2[System.String,System.String]|"
+  [typename typesyms]
+  (let [types (map (fn [tsym]
+                       (clojure.lang.CljCompiler.Ast.HostExpr/MaybeType tsym false))
+                   typesyms)
+       ftype (symbol (str typename "`" (count types) "[" (clojure.string/join "," types) "]"))]
+       ftype))
+
+
+;; http://stackoverflow.com/questions/20751565/executing-code-in-another-clojure-namespace-why-is-eval-required
+;; (defmacro with-ns2 [ns & body]
+;;           `(let [orig-ns# (ns-name *ns*)]
+;;                 (try
+;;                  (in-ns ~ns)
+;;                  ~@body
+;;                  (finally (in-ns orig-ns#)))))
+
+;; http://stackoverflow.com/questions/20751565/executing-code-in-another-clojure-namespace-why-is-eval-required
+(defmacro with-ns
+    "Evaluates body in another namespace. ns is either a namespace
+   object or a symbol. This makes it possible to define functions in
+   namespaces other than the current one."
+  [ns & body]
+  `(binding [*ns* (the-ns ~ns)]
+            ~@body))
+
 ;; I'd really prefer if this weren't a macro.  Seems possible.
 (defmacro make-delegate
   "Creates a delegate that may be a Func<...>, Action<...>, or Action based on
   typeargs and args. A Func<...> is created if there is one more typearg than
   arg. An Action is created if there are no typeargs or args."
     [typeargs args f]
+    ;; I'm going to run the delegates in the 'user namespace.
+    ;; This should probably be configurable.  This got complicated.
+    ;; It used to just be `(~f ~@args)'.
+    ;;
+    ;; Should I instead try to run them in the repl-env?
+    (let [f-call `(with-ns '~'user
+                           (try (~f ~@args)
+                        (catch Exception e#
+                               (Debug/LogException e#))))]
     (cond
-     (some nil? typeargs)                    (throw
-                                              (ArgumentException.
-                                               (str "There are nils in typeargs: "
-                                                    (pr-str typeargs))))
-     (some #{'&} args)                       (throw
-                                              (ArgumentException. "Cannot have variable length arguments '&' in command."))
-     (= (count typeargs) (+ 1 (count args))) `(sys-func ~typeargs ~args (~f ~@args))
-     (empty? args)                           `(gen-delegate Action [] (~f))
-     (= (count typeargs) (count args))       `(sys-action ~typeargs ~args (~f ~@args))
-     :else (throw (ArgumentException.
-                   (str "Typeargs and args must be equal length or typeargs may have "
-                        "one more element at the end to represent its return type.")))))
+      (some nil? typeargs)   (throw
+                              (ArgumentException.
+                               (str "There are nils in typeargs: "
+                                    (pr-str typeargs))))
+      (some #{'&} args)      (throw
+                              (ArgumentException.
+                               "Cannot have variable length arguments '&' in command."))
+      (= (count typeargs)
+         (+ 1 (count args))) `(sys-func ~typeargs ~args ~f-call)
+         (empty? args)       `(gen-delegate Action [] ~f-call)
+         (= (count typeargs)
+            (count args))    `(sys-action ~typeargs ~args ~f-call)
+            :else
+            (throw (ArgumentException.
+                    (str "Typeargs and args must be equal length or typeargs may have "
+                         "one more element at the end to represent its return type."))))))
 
 (defmacro separate-types
   "Given a function signature with type annotations do the following:
@@ -80,7 +125,7 @@
           `{:typeargs (->> '~args
                            (mapv meta)
                            (mapv :tag))
-          :typeresult (:tag (meta '~f))})
+            :typeresult (:tag (meta '~f))})
 
 (defmacro separate-types-oldform
   "Given a function signature with type annotations do the following:
@@ -132,12 +177,14 @@ Use constructor:
 (defn- select-prompt-attrs [map]
   (select-keys
    map
-   [:prompt :input :history :completer :require-match :require-coerce :completions :ignore]))
+   [:prompt :input :history :completer :require-match :require-coerce :completions
+    :ignore]))
 
 (make-map-constructor
  ^:private make-prompt-
  Prompt
- [:prompt :input :history :completer :require-match :require-coerce :completions :ignore])
+ [:prompt :input :history :completer :require-match :require-coerce :completions
+  :ignore])
 
 (defn make-prompt
  "Create a Prompt object. Accepts the following attributes:
@@ -152,10 +199,12 @@ Use constructor:
                               (if-let [comps (:completions p-attrs nil)]
                                       (into-array String comps)))))))
 
+
 (make-map-constructor
  ^:private make-command
  Command
- [:name :description :brief-description :group-name :hidden :keymap :key-binding :signature :parameter-names :prompts :defined-in])
+ [:name :description :brief-description :group-name :hidden :keymap :key-binding
+  :signature :parameter-names :prompts :defined-in])
 
 (defn register-command
   "Register a Minibuffer command."
@@ -263,7 +312,7 @@ Use constructor:
 
   (def result-string (repl-eval-print-string \"(+ 1 2)\"))"
   [s]
-  (let [{:keys [result env]} (arcadia.repl/repl-eval-print repl-env s)]
+  (let [{:keys [result env]} (arcadia.repl/repl-eval-print @repl-env s)]
        (reset! repl-env env)
        result))
 
@@ -314,15 +363,38 @@ Use constructor:
   ([name macro]
    `(defn ~name [& args#] (eval (cons '~macro args#)))))
 
+(defn- fqns
+  "Fully qualified namespace for symbol or nil.
+e.g. (fqns 'defcmd) -> #object[Namespace 0x9bf96000 \"minibuffer.lisp.core\"]"
+  [s]
+  (if-let [var (resolve s)]
+          (->> var meta :ns)))
+
+(defn fully-qualified-symbol
+  "(fully-qualified-symbol \"defcmd\") -> 'minibuffer.lisp.core/defcmd"
+  [string]
+  (if-let [ns (fqns (symbol string))]
+          (symbol (name (ns-name ns)) string)))
+
 (defcmd ^{:key-binding "C-h f"} describe-function
   "Describe Clojure function."
-  [^String ^{:prompt "Describe function: " :history "function" :completer "function" :require-match true} function]
-  (message-or-buffer "*doc*" (with-out-str (eval `(clojure.repl/doc ~(symbol function))))))
+  [^String
+  ^{:prompt "Describe function: " :history "function"
+  :completer "function" :require-match true}
+  function]
+  (if-let [sym (fully-qualified-symbol function)]
+          (message-or-buffer "*doc*"
+                             (with-out-str (eval `(clojure.repl/doc ~sym))))
+          (message "No such function \"%s\"." function)))
 
 (defcmd ^{:key-binding "C-h s"} show-source
   "Show source code if available."
-  [^String ^{:prompt "Show source: " :history "function" :completer "function" :require-match true} function]
-  (message-or-buffer "*source*" (with-out-str (eval `(clojure.repl/source ~(symbol function))))))
+  [^String ^{:prompt "Show source: " :history "function" :completer "function"
+   :require-match true} function]
+   (if-let [sym (fully-qualified-symbol function)]
+           (message-or-buffer "*source*"
+                              (with-out-str (eval `(clojure.repl/source ~sym))))
+           (message "No such function \"%s\"." function)))
 
 (defn make-func-completer
   "Convert a fn into a ICompleter. The function accepts the current input and
@@ -332,9 +404,9 @@ Use constructor:
   [completer-fn]
   (CompleterEntity. (reify ICompleter
                            (Complete [this input]
-                                     (completer-fn input))
+                                     (into-array String (completer-fn input)))
                            (Coerce [this item desired-type]
-                                   item))))
+                                   (completer-fn item desired-type)))))
 
 (defn make-list-completer
   "Convert a list of strings into a list-completer."
@@ -378,15 +450,35 @@ coerced to a completer type unless `:coerce?' false is added to the arguments."
             (.set_Item (.completers Minibuffer/instance) name c)
             c))
 
-(def fn-completer-namespaces ['arcadia.core 'minibuffer.lisp.core])
+(def fn-completer-namespaces (atom ['arcadia.core 'minibuffer.lisp.core 'user]))
+
+
+(defn symbol-completer
+  ([input]
+   (filter #(clojure.string/starts-with? % input)
+           (map name (mapcat clojure.repl/dir-fn @fn-completer-namespaces))))
+  ([item desired-type]
+         (cond (= clojure.lang.Symbol desired-type)
+               (symbol item)
+               (= String desired-type)
+               item
+               :else
+               (throw (MinibufferException.
+                       (format "Unable to convert \"%s\" to desired type %s." item desired-type))))
+         ))
 
 (defn repl-setup
   "Called by LispCommands.cs after minibuffer.core.lisp is loaded. Sets up
   namespaces and completers."
   []
-  (repl-eval-print-string "(use 'minibuffer.lisp.core 'arcadia.core)")
-  (set-completer "function"
-                 (map name (mapcat clojure.repl/dir-fn fn-completer-namespaces))))
+  (repl-eval-print-string "(in-ns 'user)")
+  (repl-eval-print-string "(use 'minibuffer.lisp.core 'arcadia.core 'clojure.repl)")
+  ;; This is a static completer.  It will know the symbols that
+  ;; we started with.
+  #_(set-completer "function"
+                 (map name (mapcat clojure.repl/dir-fn @fn-completer-namespaces)))
+  ;; This is a live completer.
+  (set-completer "function" symbol-completer))
 
 ;; This is equivalent to the C# coded "eval-expression" command
 ;; in LispCommands.cs.

@@ -6,19 +6,18 @@
         clojure.pprint)
   (:import
    [UnityEngine Time Mathf Debug]
-   [seawisphunter.minibuffer Minibuffer Command]))
+   [seawisphunter.minibuffer Minibuffer ]))
 
 (defcmd say-hello0 []
   (message "Hi!"))
 
-(defcmd say-hello "Say hello to x. Return a number." [^String x]
+(defcmd say-hello1 "Say hello to x. Return a number." [^String x]
   (message "Hi, %s!" x)
   1)
 
 ;; no docstring
 (defcmd say-hello2 [^String x]
-  (message "Hi, %s!" x)
-  1)
+  (message "Hi, %s!" x))
 
 (defcmd ^Int64 say-hello3 [^String x]
   (message "Hi, %s!" x)
