@@ -8,17 +8,19 @@
    [UnityEngine Time Mathf Debug]
    [seawisphunter.minibuffer Minibuffer ]))
 
+;; most basic
 (defcmd say-hello0 []
   (message "Hi!"))
 
-(defcmd say-hello1 "Say hello to x. Return a number." [^String x]
-  (message "Hi, %s!" x)
-  1)
-
-;; no docstring
-(defcmd say-hello2 [^String x]
+;; has argument
+(defcmd say-hello1 [^String x]
   (message "Hi, %s!" x))
 
+;; docstring
+(defcmd say-hello2 "Say hello to x. Return a number." [^String x]
+  (message "Hi, %s!" x))
+
+;; returns int
 (defcmd ^Int64 say-hello3 [^String x]
   (message "Hi, %s!" x)
   1)
@@ -27,15 +29,14 @@
                    (message "Hi, %s!" x)
                    1)))
 
-(defcmd ^Int64 say-hello4 [^String ^{:prompt "What's your name? "} x]
-  (message "Hi, %s!" x)
-  1)
+(defcmd say-hello4 [^String ^{:prompt "What's your name? "} x]
+  (message "Hi, %s!" x))
 
 (defcmd clojure-is
   [
   ^{:prompt "Clojure is... "
   :completions ["good" "the best!" "has too many parens"]
-  :require-match true                   ; This is required to force a match on RET.
+  :require-match true                ; This is required to force a match on RET.
   }
   ^String
   x]

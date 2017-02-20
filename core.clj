@@ -28,7 +28,8 @@
     (:require clojure.string
               clojure.repl)
     (:use arcadia.core
-          arcadia.repl)
+          arcadia.repl
+          [clojure.string :refer [trim]])
   (:import
    [UnityEngine Time Mathf Debug]
    [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter]))
@@ -363,6 +364,9 @@ Use constructor:
   ([name macro]
    `(defn ~name [& args#] (eval (cons '~macro args#)))))
 
+(defn- var->ns [v]
+  (:ns (meta v)))
+
 (defn- fqns
   "Fully qualified namespace for symbol or nil.
 e.g. (fqns 'defcmd) -> #object[Namespace 0x9bf96000 \"minibuffer.lisp.core\"]"
@@ -380,11 +384,11 @@ e.g. (fqns 'defcmd) -> #object[Namespace 0x9bf96000 \"minibuffer.lisp.core\"]"
   "Describe Clojure function."
   [^String
   ^{:prompt "Describe function: " :history "function"
-  :completer "function" :require-match true}
+    :completer "function" :require-match true}
   function]
   (if-let [sym (fully-qualified-symbol function)]
           (message-or-buffer "*doc*"
-                             (with-out-str (eval `(clojure.repl/doc ~sym))))
+                             (trim (with-out-str (eval `(clojure.repl/doc ~sym)))))
           (message "No such function \"%s\"." function)))
 
 (defcmd ^{:key-binding "C-h s"} show-source
@@ -393,7 +397,7 @@ e.g. (fqns 'defcmd) -> #object[Namespace 0x9bf96000 \"minibuffer.lisp.core\"]"
    :require-match true} function]
    (if-let [sym (fully-qualified-symbol function)]
            (message-or-buffer "*source*"
-                              (with-out-str (eval `(clojure.repl/source ~sym))))
+                              (trim (with-out-str (eval `(clojure.repl/source ~sym)))))
            (message "No such function \"%s\"." function)))
 
 (defn make-func-completer
@@ -450,7 +454,8 @@ coerced to a completer type unless `:coerce?' false is added to the arguments."
             (.set_Item (.completers Minibuffer/instance) name c)
             c))
 
-(def fn-completer-namespaces (atom ['arcadia.core 'minibuffer.lisp.core 'user]))
+(def fn-completer-namespaces
+     (atom ['arcadia.core 'minibuffer.lisp.core 'minibuffer.lisp.example 'user]))
 
 
 (defn symbol-completer
@@ -467,12 +472,50 @@ coerced to a completer type unless `:coerce?' false is added to the arguments."
                        (format "Unable to convert \"%s\" to desired type %s." item desired-type))))
          ))
 
+(defn filter-ns-map [ns excluded]
+  (let [excluded* (set (map (comp ns-name the-ns) excluded))]
+      (->> (the-ns ns)
+        (ns-refers)
+        (vals)
+        (filter (fn [kv]))
+        (first)
+        (var->ns)
+        (ns-name)
+        (contains? excluded*)
+        ))
+
+  )
+
+(defn filter-fns [amap]
+  (into {} (filter #(let [v (val %)]
+                         (and (bound? v) (fn? @v))) amap)))
+
+(defn filter-variables [amap]
+  (into {} (filter #(let [v (val %)]
+                         (and (bound? v) (not (fn? @v)))) amap)))
+
+(defn filter-sources [amap]
+;;  (prn "ok")
+  (into {} (filter #(let [k (key %)]
+                         ;;(prn "checking" k)
+                         (try (clojure.repl/source-fn k)
+                              (catch Exception e nil)))
+                   amap)))
+
+(defn filter-ns-map [ns excluded]
+  (let [excluded* (set (map (comp ns-name the-ns) excluded))
+       m (ns-refers (the-ns ns))]
+       (select-keys m
+                    (for [[k v] m :when (not (contains? excluded* (ns-name (var->ns v)))) ] k))))
+
+
 (defn repl-setup
   "Called by LispCommands.cs after minibuffer.core.lisp is loaded. Sets up
   namespaces and completers."
   []
   (repl-eval-print-string "(in-ns 'user)")
-  (repl-eval-print-string "(use 'minibuffer.lisp.core 'arcadia.core 'clojure.repl)")
+  (repl-eval-print-string "(use 'minibuffer.lisp.core 'minibuffer.lisp.example 'arcadia.core 'clojure.repl)")
+  (repl-eval-print-string "(import [UnityEngine Time Mathf Debug]")
   ;; This is a static completer.  It will know the symbols that
   ;; we started with.
   #_(set-completer "function"
