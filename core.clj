@@ -32,6 +32,7 @@
           [clojure.string :refer [trim]])
   (:import
    [UnityEngine Time Mathf Debug]
+   [RSG Promise IPromise]
    [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter]))
 
 (defn do-with-minibuffer
@@ -54,14 +55,16 @@
     [minibuffer-var & body]
     `(do-with-minibuffer (fn [~minibuffer-var] ~@body)))
 
-(defn- generate-generic-type
+(defmacro generate-generic-type
   "Like generate-generic-delegate but just provides the type.
 
 e.g. (generate-generic-type 'Dictionary [String String])
        -> |Dictionary`2[System.String,System.String]|"
   [typename typesyms]
   (let [types (map (fn [tsym]
-                       (clojure.lang.CljCompiler.Ast.HostExpr/MaybeType tsym false))
+                       (if-let [t (clojure.lang.CljCompiler.Ast.HostExpr/MaybeType tsym false)]
+                               t
+                               (throw (ArgumentException. (format "Unable to convert '%s' to a type." tsym)))))
                    typesyms)
        ftype (symbol (str typename "`" (count types) "[" (clojure.string/join "," types) "]"))]
        ftype))
@@ -401,10 +404,13 @@ e.g. (fqns 'defcmd) -> #object[Namespace 0x9bf96000 \"minibuffer.lisp.core\"]"
            (message "No such function \"%s\"." function)))
 
 (defn make-func-completer
-  "Convert a fn into a ICompleter. The function accepts the current input and
+  "Convert a fn into a ICompleter. The completer accepts the current input and
   returns a list of potential matches (does not have to be sorted).
 
-  e.g. (f \"Sh\") -> (\"Shane\" \"Shawn\" \"Shannon\")"
+The coercer accepts two arguments, the selected string and the desired type.
+
+  e.g. (f \"Sh\") -> (\"Shane\" \"Shawn\" \"Shannon\")
+       (f \"Shane\" clojure.lang.Symbol) -> 'Shane"
   [completer-fn]
   (CompleterEntity. (reify ICompleter
                            (Complete [this input]
@@ -438,9 +444,75 @@ e.g. (fqns 'defcmd) -> #object[Namespace 0x9bf96000 \"minibuffer.lisp.core\"]"
      [map]
      (CompleterEntity. (DictCompleter. (into-dict-string-string map))))
 
+;; Not generic
+;; (defn then
+;;   [cs-promise f]
+;;   (let [ptype (generate-generic-type IPromise [String])
+;;        atype (generate-generic-type Action [String])
+;;        meth (.GetMethod ptype "Then" (into-array Type [atype]))]
+;;        (.Invoke meth cs-promise (into-array Object [(sys-action [String] [s] (f s))]))))
+
+;; Generic
+(defn then
+  "Given a RSG.IPromise<T> run (f result-value) when the promise resolves."
+  [ipromise f]
+  (let [ptype (type ipromise)
+       of-type (.GetGenericArguments ptype)
+       atype (eval `(generate-generic-type Action ~of-type))
+       meth (.GetMethod ptype "Then" (into-array Type [atype]))
+       arg #_(eval `(sys-action ~(apply vector of-type) [~'s] (~f ~'s)))
+       (. clojure.lang.GenDelegate Create atype f)
+       ]
+       (.Invoke meth ipromise (into-array Object [arg]))))
+
+(defn pcatch
+  "Given an RSG.IPromise p, if p is rejected, run (f e) where e is the
+  exception.
+
+Note: named pcatch to not conflict with try/catch builtin."
+  [ipromise f]
+  (.Catch ipromise (sys-action [Exception] [e] (f e))))
+
+(defn read
+  "Read a string from the minibuffer prompt. This returns an IPromise.
+
+e.g. (then (read \"Who are you? \") #(message \"Hi, %s.\" %))"
+  [prompt & {:keys [input history completer require-match require-coerce]
+             :or {input "" history nil completer nil
+                  require-match false require-coerce false}}]
+  (with-minibuffer
+   m
+   (.Read m prompt input history completer require-match require-coerce)
+   ;; I was considering using Clojure's promises, but they seem
+   ;; anemic: not then-able, no fail state. Will stick with
+   ;; IPromise library.
+   
+   ;; (let [p (promise)]
+   ;;      (then
+   ;;       (.Read m prompt input history completer require-match require-coerce)
+   ;;       (fn [result]
+   ;;           (deliver p result)))
+   ;;      p)
+   ))
+
+(defn read-type
+  [type prompt & {:keys [input history completer require-match require-coerce]
+                  :or {input "" history nil completer nil
+                       require-match false require-coerce false}}]
+  (let [read-method
+    (MinibufferExtensions/GetMethodGeneric
+     Minibuffer "Read"
+     (into-array Type [type])
+     (into-array Type [String String String String Boolean Boolean]))]
+     (with-minibuffer
+      m
+      (.Invoke read-method m (into-array Object [prompt input history completer
+                                                 require-match require-match])))))
+
+
 (defn set-completer
   "Add a completer to Minibuffer. Any fn, list, or map will be automatically
-coerced to a completer type unless `:coerce?' false is added to the arguments."
+coerced to a completer type unless `:coerce? false' is added to the arguments."
   [name completer & {:keys [coerce?]
                      :or {coerce? true}}]
   (let [c (if coerce?
@@ -469,22 +541,20 @@ coerced to a completer type unless `:coerce?' false is added to the arguments."
                item
                :else
                (throw (MinibufferException.
-                       (format "Unable to convert \"%s\" to desired type %s." item desired-type))))
-         ))
+                       (format "Unable to convert \"%s\" to desired type %s." item desired-type))))))
 
-(defn filter-ns-map [ns excluded]
-  (let [excluded* (set (map (comp ns-name the-ns) excluded))]
-      (->> (the-ns ns)
-        (ns-refers)
-        (vals)
-        (filter (fn [kv]))
-        (first)
-        (var->ns)
-        (ns-name)
-        (contains? excluded*)
-        ))
-
-  )
+;; (defn filter-ns-map [ns excluded]
+;;   (let [excluded* (set (map (comp ns-name the-ns) excluded))]
+;;       (->> (the-ns ns)
+;;         (ns-refers)
+;;         (vals)
+;;         (filter (fn [kv]))
+;;         (first)
+;;         (var->ns)
+;;         (ns-name)
+;;         (contains? excluded*)
+;;         ))
+;;   )
 
 (defn filter-fns [amap]
   (into {} (filter #(let [v (val %)]
@@ -495,18 +565,20 @@ coerced to a completer type unless `:coerce?' false is added to the arguments."
                          (and (bound? v) (not (fn? @v)))) amap)))
 
 (defn filter-sources [amap]
-;;  (prn "ok")
   (into {} (filter #(let [k (key %)]
-                         ;;(prn "checking" k)
                          (try (clojure.repl/source-fn k)
-                              (catch Exception e nil)))
+                              (catch Exception e
+                                     nil)))
                    amap)))
 
-(defn filter-ns-map [ns excluded]
+;; (ns-refers (the-ns ns))
+(defn filter-ns [excluded amap]
   (let [excluded* (set (map (comp ns-name the-ns) excluded))
-       m (ns-refers (the-ns ns))]
+        m amap]
        (select-keys m
-                    (for [[k v] m :when (not (contains? excluded* (ns-name (var->ns v)))) ] k))))
+                    (for [[k v] m :when
+                         (not (contains? excluded* (ns-name (var->ns v))))]
+                         k))))
 
 
 (defn repl-setup
