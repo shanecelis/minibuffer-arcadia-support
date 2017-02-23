@@ -190,16 +190,16 @@ This form will defer execution until such an instance is available.
 
 ;; Generic
 (defn then
-  "Given a RSG.IPromise<T> run (f result-value) when the promise resolves."
+  "Given a RSG.IPromise<T> run (f result-value) when the promise resolves. A new
+  promise is returned."
   [ipromise f]
   (let [ptype (type ipromise)
-       of-type (.GetGenericArguments ptype)
-       atype (eval `(generate-generic-type Action ~of-type))
-       meth (.GetMethod ptype "Then" (into-array Type [atype]))
-       arg #_(eval `(sys-action ~(apply vector of-type) [~'s] (~f ~'s)))
-       (. clojure.lang.GenDelegate Create atype f)
-       ]
-       (.Invoke meth ipromise (into-array Object [arg]))))
+        of-type (.GetGenericArguments ptype)
+        atype (eval `(generate-generic-type Action ~of-type))
+        meth (.GetMethod ptype "Then" (into-array Type [atype]))
+        arg #_(eval `(sys-action ~(apply vector of-type) [~'s] (~f ~'s)))
+        (. clojure.lang.GenDelegate Create atype f)]
+    (.Invoke meth ipromise (into-array Object [arg]))))
 
 (defn pcatch
   "Given an RSG.IPromise p, if p is rejected, run (f e) where e is the
@@ -212,7 +212,8 @@ Note: named pcatch to not conflict with try/catch builtin."
 (defn read-from-minibuffer
   "Read a string from the minibuffer prompt. This returns an IPromise.
 
-e.g. (then (read-from-minibuffer \"Who are you? \") #(message \"Hi, %s.\" %))"
+e.g. (then (read-from-minibuffer \"Who are you? \")
+           #(message \"Hi, %s.\" %))"
   [prompt & {:keys [input history completer require-match require-coerce]
              :or {input "" history nil completer nil
                   require-match false require-coerce false}}]
@@ -232,6 +233,11 @@ e.g. (then (read-from-minibuffer \"Who are you? \") #(message \"Hi, %s.\" %))"
    ))
 
 (defn read-type
+  "Read from the minibuffer but of a particular type. Basically Minibuffer.Read<T>().
+
+(then (read-type Int64 \"How old are you?\")
+      #(message \"%d is a fine age.\" %))
+"
   [type prompt & {:keys [input history completer require-match require-coerce]
                   :or {input "" history nil completer nil
                        require-match false require-coerce false}}]
@@ -261,7 +267,8 @@ coerced to a completer type unless `:coerce? false' is added to the arguments."
             (.set_Item (.completers Minibuffer/instance) name c)
             c))
 
-(def symbol-completer-exclude-namespaces (atom ['clojure.core 'clojure.repl]))
+(def symbol-completer-exclude-namespaces
+     (atom ['clojure.core 'clojure.repl]))
 
 (defn make-symbol-completer
   "Create a symbol completer. Accepts a filter function that will take a
