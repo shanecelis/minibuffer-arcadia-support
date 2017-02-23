@@ -31,24 +31,39 @@
           arcadia.repl
           [clojure.string :refer [trim]])
   (:import
+   [clojure.lang Symbol]
    [UnityEngine Time Mathf Debug]
    [RSG Promise IPromise]
    [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter]))
 
+;; Thanks, Joseph (@selfsame), for the repl environment tip!
+(def repl-env (atom (arcadia.repl/env-map)))
+
+(defn repl-eval-print-string
+  "This repl is used by the eval-expression command.
+
+  (def result-string (repl-eval-print-string \"(+ 1 2)\"))"
+  [s]
+  (let [{:keys [result env]} (arcadia.repl/repl-eval-print @repl-env s)]
+       (reset! repl-env env)
+       result))
+
 (defn do-with-minibuffer
   "Run (f Minibuffer/instance) when Minibuffer/instance is available.
 
-   FIXME: I don't think defering works currently. I'm not sure any state can be saved when hitting stop then play in Unity."
+   FIXME: I don't think defering works currently. I'm not sure any state can be
+  saved when hitting stop then play in Unity."
   [f]
   (if (nil? Minibuffer/instance)
       (do
           (log "defering do-with-minibuffer")
           ;; This is no longer good.
-          (Minibuffer/OnStart (gen-delegate Action [] (f Minibuffer/instance))))
+          (Minibuffer/OnStart (sys-action [Minibuffer] [m] (f m))))
     (f Minibuffer/instance)))
 
 (defmacro with-minibuffer
-  "Minibuffer/instance is only available when a scene with Minibuffer is running. This form will defer execution until such an instance is available.
+  "Minibuffer/instance is only available when a scene with Minibuffer is running.
+This form will defer execution until such an instance is available.
 
   (with-minibuffer minibuffer
     (.Message minibuffer \"Minibuffer instance available!\"))"
@@ -87,6 +102,16 @@ e.g. (generate-generic-type 'Dictionary [String String])
   `(binding [*ns* (the-ns ~ns)]
             ~@body))
 
+(defmacro with-repl-ns
+    [& body]
+  `(with-ns ~(:*ns* @repl-env)
+            ~@body))
+
+(defmacro with-def-ns
+    [& body]
+    `(with-ns ~*ns*
+              ~@body))
+
 ;; I'd really prefer if this weren't a macro.  Seems possible.
 (defmacro make-delegate
   "Creates a delegate that may be a Func<...>, Action<...>, or Action based on
@@ -97,11 +122,14 @@ e.g. (generate-generic-type 'Dictionary [String String])
     ;; This should probably be configurable.  This got complicated.
     ;; It used to just be `(~f ~@args)'.
     ;;
-    ;; Should I instead try to run them in the repl-env?
-    (let [f-call `(with-ns '~'user
-                           (try (~f ~@args)
+    ;; Should I instead try to run them in the repl-env? YES.
+    (let [f-call `;(with-def-ns
+                   ;(log "delegate ns now " *ns*)
+                   (try (~f ~@args)
                         (catch Exception e#
-                               (Debug/LogException e#))))]
+                               (Debug/LogException e#)))
+                   ;)
+                   ]
     (cond
       (some nil? typeargs)   (throw
                               (ArgumentException.
@@ -308,17 +336,6 @@ Use constructor:
                    (.MessageOrBuffer m buffer-name msg)))
 
 
-;; Thanks, Joseph (@selfsame), for the repl environment tip!
-(def repl-env (atom (arcadia.repl/env-map)))
-
-(defn repl-eval-print-string
-  "This repl is used by the eval-expression command.
-
-  (def result-string (repl-eval-print-string \"(+ 1 2)\"))"
-  [s]
-  (let [{:keys [result env]} (arcadia.repl/repl-eval-print @repl-env s)]
-       (reset! repl-env env)
-       result))
 
 (defn get-keymap
   "Return a keymap of the given name or null if it doesn't exist. May opt to
@@ -385,22 +402,27 @@ e.g. (fqns 'defcmd) -> #object[Namespace 0x9bf96000 \"minibuffer.lisp.core\"]"
 
 (defcmd ^{:key-binding "C-h f"} describe-function
   "Describe Clojure function."
-  [^String
-  ^{:prompt "Describe function: " :history "function"
-    :completer "function" :require-match true}
-  function]
-  (if-let [sym (fully-qualified-symbol function)]
-          (message-or-buffer "*doc*"
-                             (trim (with-out-str (eval `(clojure.repl/doc ~sym)))))
-          (message "No such function \"%s\"." function)))
+  [^{:prompt "Describe function: " :history "function"
+     :completer "function" :require-match true}
+   ^Symbol function]
+   ;(log "type df " (type function))
+   (if-let [var (ns-resolve (:*ns* @repl-env) function)]
+           (message-or-buffer "*doc*"
+                              (trim (with-out-str
+                                     (with-repl-ns
+                                      (eval `(clojure.repl/doc ~function))))))
+           (message "No such function \"%s\"." function)))
 
 (defcmd ^{:key-binding "C-h s"} show-source
   "Show source code if available."
-  [^String ^{:prompt "Show source: " :history "function" :completer "function"
-   :require-match true} function]
-   (if-let [sym (fully-qualified-symbol function)]
+  [^{:prompt "Show source: " :history "function" :completer "source"
+     :require-match true}
+   ^Symbol function]
+   ;(log "type show source" (type function))
+   (if-let [var (ns-resolve (:*ns* @repl-env) function)]
            (message-or-buffer "*source*"
-                              (trim (with-out-str (eval `(clojure.repl/source ~sym)))))
+                              (trim (with-out-str (with-repl-ns (eval
+                                                    `(clojure.repl/source ~function))))))
            (message "No such function \"%s\"." function)))
 
 (defn make-func-completer
@@ -473,10 +495,10 @@ Note: named pcatch to not conflict with try/catch builtin."
   [ipromise f]
   (.Catch ipromise (sys-action [Exception] [e] (f e))))
 
-(defn read
+(defn read-from-minibuffer
   "Read a string from the minibuffer prompt. This returns an IPromise.
 
-e.g. (then (read \"Who are you? \") #(message \"Hi, %s.\" %))"
+e.g. (then (read-from-minibuffer \"Who are you? \") #(message \"Hi, %s.\" %))"
   [prompt & {:keys [input history completer require-match require-coerce]
              :or {input "" history nil completer nil
                   require-match false require-coerce false}}]
@@ -486,7 +508,7 @@ e.g. (then (read \"Who are you? \") #(message \"Hi, %s.\" %))"
    ;; I was considering using Clojure's promises, but they seem
    ;; anemic: not then-able, no fail state. Will stick with
    ;; IPromise library.
-   
+
    ;; (let [p (promise)]
    ;;      (then
    ;;       (.Read m prompt input history completer require-match require-coerce)
@@ -509,7 +531,6 @@ e.g. (then (read \"Who are you? \") #(message \"Hi, %s.\" %))"
       (.Invoke read-method m (into-array Object [prompt input history completer
                                                  require-match require-match])))))
 
-
 (defn set-completer
   "Add a completer to Minibuffer. Any fn, list, or map will be automatically
 coerced to a completer type unless `:coerce? false' is added to the arguments."
@@ -529,20 +550,6 @@ coerced to a completer type unless `:coerce? false' is added to the arguments."
 (def fn-completer-namespaces
      (atom ['arcadia.core 'minibuffer.lisp.core 'minibuffer.lisp.example 'user]))
 
-
-(defn symbol-completer
-  ([input]
-   (filter #(clojure.string/starts-with? % input)
-           (map name (mapcat clojure.repl/dir-fn @fn-completer-namespaces))))
-  ([item desired-type]
-         (cond (= clojure.lang.Symbol desired-type)
-               (symbol item)
-               (= String desired-type)
-               item
-               :else
-               (throw (MinibufferException.
-                       (format "Unable to convert \"%s\" to desired type %s." item desired-type))))))
-
 ;; (defn filter-ns-map [ns excluded]
 ;;   (let [excluded* (set (map (comp ns-name the-ns) excluded))]
 ;;       (->> (the-ns ns)
@@ -556,7 +563,7 @@ coerced to a completer type unless `:coerce? false' is added to the arguments."
 ;;         ))
 ;;   )
 
-(defn filter-fns [amap]
+(defn filter-functions [amap]
   (into {} (filter #(let [v (val %)]
                          (and (bound? v) (fn? @v))) amap)))
 
@@ -566,13 +573,17 @@ coerced to a completer type unless `:coerce? false' is added to the arguments."
 
 (defn filter-sources [amap]
   (into {} (filter #(let [k (key %)]
-                         (try (clojure.repl/source-fn k)
+                         (try (with-repl-ns
+                               (clojure.repl/source-fn k))
+                              true
                               (catch Exception e
-                                     nil)))
+                                     false)))
                    amap)))
 
 ;; (ns-refers (the-ns ns))
-(defn filter-ns [excluded amap]
+(defn filter-ns
+  "Filter out namespaces from something like an `(ns-publics ns)' map"
+  [excluded amap]
   (let [excluded* (set (map (comp ns-name the-ns) excluded))
         m amap]
        (select-keys m
@@ -580,6 +591,31 @@ coerced to a completer type unless `:coerce? false' is added to the arguments."
                          (not (contains? excluded* (ns-name (var->ns v))))]
                          k))))
 
+(def symbol-completer-exclude-namespaces (atom ['clojure.core]))
+
+(defn make-symbol-completer
+  "Create a symbol completer. Accepts a filter function that will take a
+dictionary of symbols and vars (like you get from ns-publics)."
+  ([]
+   (make-symbol-completer identity))
+  ([filter-map]
+   (fn ([input]
+        (filter #(clojure.string/starts-with? % input)
+                (map (comp name first)
+                     (filter-map
+                      #_(mapcat #(ns-publics (the-ns %))
+                              @fn-completer-namespaces)
+                      (filter-ns @symbol-completer-exclude-namespaces
+                                 (merge (ns-refers (:*ns* @repl-env))
+                                        (ns-interns (:*ns* @repl-env))))))))
+       ([item desired-type]
+              (cond (= clojure.lang.Symbol desired-type)
+                    (symbol item)
+                    (= String desired-type)
+                    item
+                    :else
+                    (throw (MinibufferException.
+                            (format "Unable to convert \"%s\" to desired type %s." item desired-type))))))))
 
 (defn repl-setup
   "Called by LispCommands.cs after minibuffer.core.lisp is loaded. Sets up
@@ -593,13 +629,18 @@ coerced to a completer type unless `:coerce? false' is added to the arguments."
   #_(set-completer "function"
                  (map name (mapcat clojure.repl/dir-fn @fn-completer-namespaces)))
   ;; This is a live completer.
-  (set-completer "function" symbol-completer))
+  (set-completer "Symbol" (make-symbol-completer))
+  (set-completer "function" (make-symbol-completer filter-functions))
+  (set-completer "variable" (make-symbol-completer filter-variables))
+  (set-completer "source" (make-symbol-completer filter-sources))
+  ;(in-ns 'user)
+  )
 
 ;; This is equivalent to the C# coded "eval-expression" command
 ;; in LispCommands.cs.
 ;;
-;; (defcmd eval-expression
-;;   "Evaluate an expression and show its result in the echo-area."
-;;   [ ^{:prompt "Eval: " :history "expression" :key-binding "M-;"}
-;;     ^String expression]
-;;   (message (trim (repl-eval-print-string expression))))
+(defcmd eval-expression
+  "Evaluate a Clojure expression and show its result."
+  [ ^{:prompt "Eval: " :history "expression" :key-binding "M-:"}
+    ^String expression]
+  (message (trim (repl-eval-print-string expression))))
