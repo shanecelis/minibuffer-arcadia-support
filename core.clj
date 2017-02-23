@@ -210,13 +210,13 @@ Use constructor:
   (select-keys
    map
    [:prompt :input :history :completer :require-match :require-coerce :completions
-    :ignore]))
+    :ignore :default-value]))
 
 (make-map-constructor
  ^:private make-prompt-
  Prompt
  [:prompt :input :history :completer :require-match :require-coerce :completions
-  :ignore])
+  :ignore :default-value])
 
 (defn make-prompt
  "Create a Prompt object. Accepts the following attributes:
@@ -407,6 +407,8 @@ e.g. (fqns 'defcmd) -> #object[Namespace 0x9bf96000 \"minibuffer.lisp.core\"]"
    ^Symbol function]
    ;(log "type df " (type function))
    (if-let [var (ns-resolve (:*ns* @repl-env) function)]
+           #_(eval-expression (format "(doc %s)" (name function))
+                            "*doc*")
            (message-or-buffer "*doc*"
                               (trim (with-out-str
                                      (with-repl-ns
@@ -420,9 +422,17 @@ e.g. (fqns 'defcmd) -> #object[Namespace 0x9bf96000 \"minibuffer.lisp.core\"]"
    ^Symbol function]
    ;(log "type show source" (type function))
    (if-let [var (ns-resolve (:*ns* @repl-env) function)]
+           #_(eval-expression (format "(source %s)" (name function))
+                            "*source*")
            (message-or-buffer "*source*"
-                              (trim (with-out-str (with-repl-ns (eval
-                                                    `(clojure.repl/source ~function))))))
+                              (trim
+                               (with-out-str
+                                (with-repl-ns
+                                 (eval `(clojure.repl/source ~function))))
+                               #_(with-repl-ns
+                                (with-out-str
+                                 (clojure.repl/source-fn (fully-qualified-symbol (name function))))))
+                              )
            (message "No such function \"%s\"." function)))
 
 (defn make-func-completer
@@ -574,8 +584,8 @@ coerced to a completer type unless `:coerce? false' is added to the arguments."
 (defn filter-sources [amap]
   (into {} (filter #(let [k (key %)]
                          (try (with-repl-ns
-                               (clojure.repl/source-fn k))
-                              true
+                               (not= "Source not found\n"
+                                     (count (clojure.repl/source-fn k))))
                               (catch Exception e
                                      false)))
                    amap)))
@@ -591,7 +601,7 @@ coerced to a completer type unless `:coerce? false' is added to the arguments."
                          (not (contains? excluded* (ns-name (var->ns v))))]
                          k))))
 
-(def symbol-completer-exclude-namespaces (atom ['clojure.core]))
+(def symbol-completer-exclude-namespaces (atom ['clojure.core 'clojure.repl]))
 
 (defn make-symbol-completer
   "Create a symbol completer. Accepts a filter function that will take a
@@ -639,8 +649,11 @@ dictionary of symbols and vars (like you get from ns-publics)."
 ;; This is equivalent to the C# coded "eval-expression" command
 ;; in LispCommands.cs.
 ;;
-(defcmd eval-expression
-  "Evaluate a Clojure expression and show its result."
-  [ ^{:prompt "Eval: " :history "expression" :key-binding "M-:"}
-    ^String expression]
-  (message (trim (repl-eval-print-string expression))))
+;; (defcmd ^{:key-binding "M-:"} eval-expression
+
+;;   "Evaluate a Clojure expression and show its result."
+;;   [ ^{:prompt "Eval: " :history "expression" }
+;;   ^String expression
+;;   ^{:default-value "*eval*"}
+;;   ^String buffer-name]
+;;   (message-or-buffer buffer-name (trim (repl-eval-print-string expression))))
