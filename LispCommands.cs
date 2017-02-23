@@ -36,7 +36,7 @@ public class LispCommands : MonoBehaviour {
   public void EvalExpression([Prompt("Eval: ",
                                      history = "expression")]
                              string expression) {
-    var result = RT.var("minibuffer.lisp.core", "repl-eval-print-string")
+    var result = RT.var("minibuffer.lisp.internal", "repl-eval-print-string")
       .invoke(expression)
       .ToString()
       .Trim();
