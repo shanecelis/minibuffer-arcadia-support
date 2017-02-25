@@ -278,8 +278,12 @@ The coercer accepts two arguments, the selected string and the desired type.
 (defn filter-sources [amap]
   (into {} (filter #(let [k (key %)]
                          (try (with-repl-ns
-                               (not= "Source not found\n"
-                                     (count (clojure.repl/source-fn k))))
+                               (not= "Source not found"
+                                     #_(clojure.repl/source-fn k)
+                                     (trim
+                                      (with-out-str
+                                       (with-repl-ns
+                                        (eval `(clojure.repl/source ~k)))))))
                               (catch Exception e
                                      false)))
                    amap)))

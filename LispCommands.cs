@@ -13,6 +13,10 @@ public class LispCommands : MonoBehaviour {
 
     var result = RT.var("minibuffer.lisp.core", "repl-setup")
       .invoke();
+    // Can't do this.
+    // RT.var("clojure.core", "in-ns")
+    //   .invoke(RT.var("clojure.core", "symbol")
+    //           .invoke("user"));
 
     //EvalExpression("(minibuffer.lisp.core/repl-setup)");
     // Should I do a (use 'minibuffer.lisp.core 'arcadia.core) here too?

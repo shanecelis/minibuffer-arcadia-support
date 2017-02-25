@@ -137,6 +137,13 @@ This form will defer execution until such an instance is available.
         (let [msg (apply format fmt strings)]
              (message msg))))
 
+
+(defn to-buffer
+  "Depending on the size of the output, message or use a buffer."
+  [buffer-name content]
+  (with-minibuffer m
+    (.ToBuffer m buffer-name content)))
+
 (defn message-or-buffer
   "Depending on the size of the output, message or use a buffer."
   [buffer-name msg]
@@ -277,6 +284,7 @@ dictionary of symbols and vars (like you get from ns-publics)."
    (make-symbol-completer identity))
   ([filter-map]
    (fn ([input]
+        ;(log "ns" *ns*)
         (filter #(clojure.string/starts-with? % input)
                 (map (comp name first)
                      (filter-map
@@ -341,10 +349,10 @@ dictionary of symbols and vars (like you get from ns-publics)."
                               (trim
                                (with-out-str
                                 (with-repl-ns
-                                 (eval `(clojure.repl/source ~function))))
+                                 (eval `(clojure.repl/source ~function)))))
                                #_(with-repl-ns
                                 (with-out-str
-                                 (clojure.repl/source-fn (fully-qualified-symbol (name function))))))
+                                 (clojure.repl/source-fn (fully-qualified-symbol (name function)))))
                               )
            (message "No such function \"%s\"." function)))
 
