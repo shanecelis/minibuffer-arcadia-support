@@ -35,7 +35,7 @@
    [clojure.lang Symbol]
    [UnityEngine Time Mathf Debug]
    [RSG Promise IPromise]
-   [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter]))
+   [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter Variable]))
 
 (defmacro with-minibuffer
   "Minibuffer/instance is only available when a scene with Minibuffer is running.
@@ -66,12 +66,41 @@ This form will defer execution until such an instance is available.
                                   (conj (map make-prompt ps)
                                         nil)))
               )]
+
                                         ;; (log "register prompt type" (type (:prompts attrs)))
    (with-minibuffer
     m
     (.RegisterCommand m
                       (make-command attrs)
                       (eval `(make-delegate ~typeargs ~args ~f))))))
+
+(defn register-variable [type variable-name-or-attrs var]
+  (let [attrs (if (string? variable-name-or-attrs)
+                 {:name variable-name-or-attrs}
+                 variable-name-or-attrs)
+       generic-meth (.GetMethod Minibuffer "RegisterVariable")
+       meth (.MakeGenericMethod generic-meth (into-array Type [type]))
+
+       #_(MinibufferExtensions/GetMethodGeneric
+             Minibuffer "RegisterVariable"
+             (into-array Type [type])
+             (into-array Type [Variable
+                         (eval `(generate-generic-type "System.Func" [~type]))
+                         (eval `(generate-generic-type "System.Action" [~type]))]))]
+
+                         meth
+                         #_(eval `(generate-generic-type "System.Action" [~type]))
+                         #_(eval `(generate-generic-type "System.Func" [~type]))
+                         (with-minibuffer m
+                    (.Invoke meth m
+                             (into-array Object
+                                         [(make-variable attrs)
+                                         (eval `(sys-func [~type] [] (var-get ~var)))
+                                         (eval `(sys-action [~type] [~'value] (var-set ~var ~'value)))]))
+                    #_(.RegisterVariable m
+                     (make-variable attrs)
+                     (eval `(sys-func [~type] [] (var-get ~var)))
+                     (eval `(sys-action [~type] [~'value] (var-set ~var ~'value)))))))
 
 (defmacro defcmd
   "Define a Minibuffer command and function.

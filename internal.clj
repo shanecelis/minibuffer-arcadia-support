@@ -8,7 +8,7 @@
    [clojure.lang Symbol]
    [UnityEngine Time Mathf Debug]
    [RSG Promise IPromise]
-   [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter]))
+   [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter Variable]))
 
 ;; Thanks, Joseph (@selfsame), for the repl environment tip!
 (def repl-env (atom (arcadia.repl/env-map)))
@@ -200,6 +200,11 @@ Use constructor:
  Command
  [:name :description :brief-description :group-name :hidden :keymap :key-binding
   :signature :parameter-names :prompts :defined-in])
+
+(make-map-constructor
+ make-variable
+ Variable
+ [:name :description :brief-description :dynamic])
 
 ;; http://stackoverflow.com/questions/9273333/in-clojure-how-to-apply-a-macro-to-a-list
 ;; It always comes to this.
