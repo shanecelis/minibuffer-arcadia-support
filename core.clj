@@ -58,25 +58,30 @@ This form will defer execution until such an instance is available.
                            (sys-action [~type] [~'value] (~f-set ~'value))))
 
 (defmacro defvar
+    "Define a minibuffer variable. This variable is mutable therefore the value
+is wrapped in `(atom value)'."
     ([name value]
-           `(defvar name nil value))
+           `(defvar ~name nil ~value))
     ([name doc value]
-           `(do (def ~name ~doc (atom ~value))
+           `(do (def ~name ~@(if doc [doc] []) (atom ~value))
                 (register-variable ~(type value) {:name ~(clojure.core/name name) :description ~doc
                                                   :defined-in ~(format "namespace %s" (ns-name *ns*)) }
                                    (fn [] (deref ~name))
                                    (fn [~'v] (reset! ~name ~'v))))))
 
 (defmacro defparam
-    ([name value]
-           `(defparam name nil value))
+    "Define a minibuffer parameter. The parameter is not mutable and will
+provide an error message if `M-x edit-variable param-name' is attempted."
+  ([name value]
+         `(defparam ~name nil ~value))
   ([name doc value]
-         `(do (def ~name ~doc ~value)
-              (register-variable ~(type value) {:name ~(clojure.core/name name) :description ~doc
-                                                :defined-in ~(format "namespace %s" (ns-name *ns*)) }
-                                 (fn [] ~name)
-                                 (fn [~'v]
-                                     (message "Cannot change parameter value. Consider using defvar."))))))
+         `(do (def ~name ~@(if doc [doc] []) ~value)
+              (register-variable
+               ~(type value) {:name ~(clojure.core/name name) :description ~doc
+                              :defined-in ~(format "namespace %s" (ns-name *ns*)) }
+               (fn [] ~name)
+               (fn [~'v]
+                   (message "Cannot change parameter value. Consider using defvar."))))))
 
 ;; BUG messed up defcmd by changing register-command into a macro
 (defmacro defcmd
