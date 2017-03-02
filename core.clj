@@ -46,62 +46,39 @@ This form will defer execution until such an instance is available.
     [minibuffer-var & body]
     `(do-with-minibuffer (fn [~minibuffer-var] ~@body)))
 
-(defn register-command
+(defmacro register-command
   "Register a Minibuffer command."
   [cmd-name-or-attrs typeargs args f]
-  (let [attrs* (if (string? cmd-name-or-attrs)
-                   {:name cmd-name-or-attrs}
-                   cmd-name-or-attrs)
-       attrs (assoc
-              attrs*
-              :parameter-names
-              (if-let [pnames (:parameter-names attrs* nil)]
-                      (into-array String
-                                  (into ["closure"]
-                                        pnames)))
-              :prompts
-              (if-let [ps (:prompts attrs* nil)]
-                      (into-array Prompt
-                                  ;; add a nil for the closure param
-                                  (conj (map make-prompt ps)
-                                        nil)))
-              )]
+  `(register-command-fn ~cmd-name-or-attrs (make-delegate ~typeargs ~args ~f)))
 
-                                        ;; (log "register prompt type" (type (:prompts attrs)))
-   (with-minibuffer
-    m
-    (.RegisterCommand m
-                      (make-command attrs)
-                      (eval `(make-delegate ~typeargs ~args ~f))))))
+(defmacro register-variable
+    [type variable-name-or-attrs f-get f-set]
+    `(register-variable-fn ~type ~variable-name-or-attrs
+                           (sys-func [~type] [] (~f-get))
+                           (sys-action [~type] [~'value] (~f-set ~'value))))
 
-(defn register-variable [type variable-name-or-attrs var]
-  (let [attrs (if (string? variable-name-or-attrs)
-                 {:name variable-name-or-attrs}
-                 variable-name-or-attrs)
-       generic-meth (.GetMethod Minibuffer "RegisterVariable")
-       meth (.MakeGenericMethod generic-meth (into-array Type [type]))
+(defmacro defvar
+    ([name value]
+           `(defvar name nil value))
+    ([name doc value]
+           `(do (def ~name ~doc (atom ~value))
+                (register-variable ~(type value) {:name ~(clojure.core/name name) :description ~doc
+                                                  :defined-in ~(format "namespace %s" (ns-name *ns*)) }
+                                   (fn [] (deref ~name))
+                                   (fn [~'v] (reset! ~name ~'v))))))
 
-       #_(MinibufferExtensions/GetMethodGeneric
-             Minibuffer "RegisterVariable"
-             (into-array Type [type])
-             (into-array Type [Variable
-                         (eval `(generate-generic-type "System.Func" [~type]))
-                         (eval `(generate-generic-type "System.Action" [~type]))]))]
+(defmacro defparam
+    ([name value]
+           `(defparam name nil value))
+  ([name doc value]
+         `(do (def ~name ~doc ~value)
+              (register-variable ~(type value) {:name ~(clojure.core/name name) :description ~doc
+                                                :defined-in ~(format "namespace %s" (ns-name *ns*)) }
+                                 (fn [] ~name)
+                                 (fn [~'v]
+                                     (message "Cannot change parameter value. Consider using defvar."))))))
 
-                         meth
-                         #_(eval `(generate-generic-type "System.Action" [~type]))
-                         #_(eval `(generate-generic-type "System.Func" [~type]))
-                         (with-minibuffer m
-                    (.Invoke meth m
-                             (into-array Object
-                                         [(make-variable attrs)
-                                         (eval `(sys-func [~type] [] (var-get ~var)))
-                                         (eval `(sys-action [~type] [~'value] (var-set ~var ~'value)))]))
-                    #_(.RegisterVariable m
-                     (make-variable attrs)
-                     (eval `(sys-func [~type] [] (var-get ~var)))
-                     (eval `(sys-action [~type] [~'value] (var-set ~var ~'value)))))))
-
+;; BUG messed up defcmd by changing register-command into a macro
 (defmacro defcmd
   "Define a Minibuffer command and function.
 
@@ -124,31 +101,35 @@ This form will defer execution until such an instance is available.
   [fn-name & defnargs]
   (let [[docstring args & body] (if (string? (first defnargs))
                                     defnargs
-                                  (conj (seq defnargs) nil))]
+                                  (conj (seq defnargs) nil))
+       typeargs (eval `(separate-types-oldform ~fn-name ~args))]
        `(do
-        (defn ~fn-name
-          ~@defnargs)
-            (register-command {
-                              :name ~(name fn-name)
-                              :description ~docstring
-                              :key-binding ~(:key-binding (meta fn-name) nil)
-                              :defined-in
-                              ~(format "namespace %s" (ns-name *ns*))
-                              :signature ~(str "(defn " (name fn-name) " ["
-                                            (clojure.string/join " "
-                                              (map name args)) "] ...)")
-                              :parameter-names ~(mapv name args)
-                              :prompts ~(let [prompts
-                                           (->> args
-                                                (mapv meta)
-                                                (mapv select-prompt-attrs))]
-                                                   (if (every? empty? prompts)
-                                                       nil
-                                                     prompts))}
-                          (separate-types-oldform ~fn-name ~args)
-                          '~args
-                          '~fn-name)
-      #'~fn-name)))
+            (defn ~fn-name
+              ~@defnargs)
+            (register-command-fn
+             {
+             :name ~(name fn-name)
+             :description ~docstring
+             :key-binding ~(:key-binding (meta fn-name) nil)
+             :defined-in
+             ~(format "namespace %s" (ns-name *ns*))
+             :signature ~(str "(defn " (name fn-name) " ["
+                              (clojure.string/join
+                               " "
+                               (map name args)) "] ...)")
+             :parameter-names ~(mapv name args)
+             :prompts ~(let [prompts
+                         (->> args
+                              (mapv meta)
+                              (mapv select-prompt-attrs))]
+                              (if (every? empty? prompts)
+                                  nil
+                                prompts))
+             }
+             (make-delegate ~typeargs
+                            ~args
+                            ~fn-name))
+          #'~fn-name)))
 
 (defn echo
   "Print string to the echo area."
@@ -168,7 +149,7 @@ This form will defer execution until such an instance is available.
 
 
 (defn to-buffer
-  "Depending on the size of the output, message or use a buffer."
+  "Output to a buffer."
   [buffer-name content]
   (with-minibuffer m
     (.ToBuffer m buffer-name content)))

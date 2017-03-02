@@ -65,3 +65,16 @@
 (macroexpand-1 '(defcmd ^Int64 say-hello4 [^String  x]
                   (message "Hi, %s!" x)
                   1))
+
+;(def a (atom 0))
+;(def b (atom 0))
+;(defn b-get [] @b)
+;(macroexpand '(defvar c "c be cool" 2))
+(defvar a 0)
+(defparam b 1)
+(defvar c "c is a long variable." 2)
+(defparam d "d is a long parameter." 3)
+
+;(register-variable Int64 "a" (fn [] @a) (fn [v] (reset! a v)))
+;(register-variable Int64 "b" (fn [] @b) (fn [v] (reset! b v)))
+;;(macroexpand '(register-variable Int64 "b" (fn [] @b) (fn [v] (reset! b v))))

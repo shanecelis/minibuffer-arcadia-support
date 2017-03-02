@@ -82,7 +82,7 @@ e.g. (generate-generic-type 'Dictionary [String String])
   typeargs and args. A Func<...> is created if there is one more typearg than
   arg. An Action is created if there are no typeargs or args."
     [typeargs args f]
-    ;; I'm going to run the delegates in the 'user namespace.
+    ;; I was going to run the delegates in the 'user namespace.
     ;; This should probably be configurable.  This got complicated.
     ;; It used to just be `(~f ~@args)'.
     ;;
@@ -104,13 +104,46 @@ e.g. (generate-generic-type 'Dictionary [String String])
                                "Cannot have variable length arguments '&' in command."))
       (= (count typeargs)
          (+ 1 (count args))) `(sys-func ~typeargs ~args ~f-call)
-         (empty? args)       `(gen-delegate Action [] ~f-call)
-         (= (count typeargs)
-            (count args))    `(sys-action ~typeargs ~args ~f-call)
-            :else
-            (throw (ArgumentException.
-                    (str "Typeargs and args must be equal length or typeargs may have "
-                         "one more element at the end to represent its return type."))))))
+      (empty? args)          `(gen-delegate Action [] ~f-call)
+      (= (count typeargs)
+         (count args))       `(sys-action ~typeargs ~args ~f-call)
+         :else
+         (throw (ArgumentException.
+                 (str "Typeargs and args must be equal length or typeargs may have "
+                      "one more element at the end to represent its return type."))))))
+
+
+
+;; I'd really prefer if this weren't a macro.  Seems possible.
+(defmacro get-delegate-type
+  "Creates a delegate that may be a Func<...>, Action<...>, or Action based on
+  typeargs and args. A Func<...> is created if there is one more typearg than
+  arg. An Action is created if there are no typeargs or args."
+    [typeargs args]
+    ;; I was going to run the delegates in the 'user namespace.
+    ;; This should probably be configurable.  This got complicated.
+    ;; It used to just be `(~f ~@args)'.
+    ;;
+    ;; Should I instead try to run them in the repl-env? YES.
+    (cond
+     (some nil? typeargs)   (throw
+                             (ArgumentException.
+                              (str "There are nils in typeargs: "
+                                   (pr-str typeargs))))
+     (some #{'&} args)      (throw
+                             (ArgumentException.
+                              "Cannot have variable length arguments '&' in command."))
+     (= (count typeargs)
+        (+ 1 (count args))) `(generate-generic-type "System.Func" ~typeargs)
+     (empty? args)          |System.Action|
+     (= (count typeargs)
+        (count args))       `(generate-generic-type "System.Action" ~typeargs)
+        :else
+        (throw (ArgumentException.
+                (str "Typeargs and args must be equal length or typeargs may have "
+                     "one more element at the end to represent its return type.")))))
+
+
 
 (defmacro separate-types
   "Given a function signature with type annotations do the following:
@@ -204,7 +237,7 @@ Use constructor:
 (make-map-constructor
  make-variable
  Variable
- [:name :description :brief-description :dynamic])
+ [:name :description :brief-description :dynamic :defined-in])
 
 ;; http://stackoverflow.com/questions/9273333/in-clojure-how-to-apply-a-macro-to-a-list
 ;; It always comes to this.
@@ -303,3 +336,42 @@ The coercer accepts two arguments, the selected string and the desired type.
                     (for [[k v] m :when
                          (not (contains? excluded* (ns-name (var->ns v))))]
                          k))))
+
+(defn register-variable-fn [type variable-name-or-attrs get-func set-action]
+  (let [attrs (if (string? variable-name-or-attrs)
+                  {:name variable-name-or-attrs}
+                  variable-name-or-attrs)
+       generic-meth (.GetMethod Minibuffer "RegisterVariable")
+       meth (.MakeGenericMethod generic-meth (into-array Type [type])) ]
+       (do-with-minibuffer
+        (fn [m]
+            (.Invoke meth m
+                     (into-array Object
+                                 [(make-variable attrs)
+                                 get-func
+                                 set-action]))))))
+
+(defn register-command-fn
+  "Register a Minibuffer command."
+  [cmd-name-or-attrs delegate-f]
+  (let [attrs* (if (string? cmd-name-or-attrs)
+                   {:name cmd-name-or-attrs}
+                   cmd-name-or-attrs)
+       attrs (assoc
+              attrs*
+              :parameter-names
+              (if-let [pnames (:parameter-names attrs* nil)]
+                      (into-array String
+                                  (into ["closure"]
+                                        pnames)))
+              :prompts
+              (if-let [ps (:prompts attrs* nil)]
+                      (into-array Prompt
+                                  ;; add a nil for the closure param
+                                  (conj (map make-prompt ps)
+                                        nil))))]
+   (do-with-minibuffer
+    (fn [m]
+        (.RegisterCommand m
+                          (make-command attrs)
+                          delegate-f)))))
