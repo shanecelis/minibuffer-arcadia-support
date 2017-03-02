@@ -52,10 +52,11 @@ This form will defer execution until such an instance is available.
   `(register-command-fn ~cmd-name-or-attrs (make-delegate ~typeargs ~args ~f)))
 
 (defmacro register-variable
-    [type variable-name-or-attrs f-get f-set]
-    `(register-variable-fn ~type ~variable-name-or-attrs
-                           (sys-func [~type] [] (~f-get))
-                           (sys-action [~type] [~'value] (~f-set ~'value))))
+  "Register a Minibuffer variable."
+  [type variable-name-or-attrs f-get f-set]
+  `(register-variable-fn ~type ~variable-name-or-attrs
+                         (sys-func [~type] [] (~f-get))
+                         (sys-action [~type] [~'value] (~f-set ~'value))))
 
 (defmacro defvar
     "Define a minibuffer variable. This variable is mutable therefore the value
@@ -152,7 +153,6 @@ provide an error message if `M-x edit-variable param-name' is attempted."
         (let [msg (apply format fmt strings)]
              (message msg))))
 
-
 (defn to-buffer
   "Output to a buffer."
   [buffer-name content]
@@ -215,12 +215,11 @@ provide an error message if `M-x edit-variable param-name' is attempted."
   "Given a RSG.IPromise<T> run (f result-value) when the promise resolves. A new
   promise is returned."
   [ipromise f]
-  (let [ptype (type ipromise)
+  (let [ptype   (type ipromise)
         of-type (.GetGenericArguments ptype)
-        atype (eval `(generate-generic-type Action ~of-type))
-        meth (.GetMethod ptype "Then" (into-array Type [atype]))
-        arg #_(eval `(sys-action ~(apply vector of-type) [~'s] (~f ~'s)))
-        (. clojure.lang.GenDelegate Create atype f)]
+        atype   (eval `(generate-generic-type Action ~of-type))
+        meth    (.GetMethod ptype "Then" (into-array Type [atype]))
+        arg     (. clojure.lang.GenDelegate Create atype f)]
     (.Invoke meth ipromise (into-array Object [arg]))))
 
 (defn pcatch
@@ -254,10 +253,10 @@ e.g. (then (read-from-minibuffer \"Who are you? \")
    ;;      p)
    ))
 
-(defn read-type
+(defn read-type-from-minibuffer
   "Read from the minibuffer but of a particular type. Basically Minibuffer.Read<T>().
 
-(then (read-type Int64 \"How old are you?\")
+(then (read-type-from-minibuffer Int64 \"How old are you?\")
       #(message \"%d is a fine age.\" %))
 "
   [type prompt & {:keys [input history completer require-match require-coerce]
@@ -290,21 +289,20 @@ coerced to a completer type unless `:coerce? false' is added to the arguments."
             c))
 
 (def symbol-completer-exclude-namespaces
+     "These namespaces are excluded from the symbol completer. This can be altered."
      (atom ['clojure.core 'clojure.repl]))
 
 (defn make-symbol-completer
   "Create a symbol completer. Accepts a filter function that will take a
-dictionary of symbols and vars (like you get from ns-publics)."
+dictionary of symbols and vars (like you get from ns-publics) and return a
+dictionary of symbols and vars."
   ([]
    (make-symbol-completer identity))
   ([filter-map]
    (fn ([input]
-        ;(log "ns" *ns*)
         (filter #(clojure.string/starts-with? % input)
                 (map (comp name first)
                      (filter-map
-                      #_(mapcat #(ns-publics (the-ns %))
-                              @fn-completer-namespaces)
                       (filter-ns @symbol-completer-exclude-namespaces
                                  (merge (ns-refers (:*ns* @repl-env))
                                         (ns-interns (:*ns* @repl-env))))))))
@@ -318,23 +316,23 @@ dictionary of symbols and vars (like you get from ns-publics)."
                             (format "Unable to convert \"%s\" to desired type %s." item desired-type))))))))
 
 (defn repl-setup
-  "Called by LispCommands.cs after minibuffer.core.lisp is loaded. Sets up
+  "Called by LispCommands.cs after minibuffer.lisp.core is loaded. Sets up
   namespaces and completers."
   []
   (repl-eval-print-string "(in-ns 'user)")
   (repl-eval-print-string "(use 'minibuffer.lisp.core 'minibuffer.lisp.example 'arcadia.core 'clojure.repl)")
   (repl-eval-print-string "(import [UnityEngine Time Mathf Debug]")
+
   ;; This is a static completer.  It will know the symbols that
   ;; we started with.
-  #_(set-completer "function"
-                 (map name (mapcat clojure.repl/dir-fn @fn-completer-namespaces)))
+  ;;(set-completer "function"
+  ;;               (map name (mapcat clojure.repl/dir-fn @fn-completer-namespaces)))
+
   ;; This is a live completer.
   (set-completer "Symbol" (make-symbol-completer))
   (set-completer "function" (make-symbol-completer filter-functions))
   (set-completer "variable" (make-symbol-completer filter-variables))
-  (set-completer "source" (make-symbol-completer filter-sources))
-  ;(in-ns 'user)
-  )
+  (set-completer "source" (make-symbol-completer filter-sources)))
 
 (defcmd ^{:key-binding "C-h f"} describe-function
   "Describe Clojure function."
@@ -343,8 +341,6 @@ dictionary of symbols and vars (like you get from ns-publics)."
    ^Symbol function]
    ;(log "type df " (type function))
    (if-let [var (ns-resolve (:*ns* @repl-env) function)]
-           #_(eval-expression (format "(doc %s)" (name function))
-                            "*doc*")
            (message-or-buffer "*doc*"
                               (trim (with-out-str
                                      (with-repl-ns
@@ -358,8 +354,6 @@ dictionary of symbols and vars (like you get from ns-publics)."
    ^Symbol function]
    ;(log "type show source" (type function))
    (if-let [var (ns-resolve (:*ns* @repl-env) function)]
-           #_(eval-expression (format "(source %s)" (name function))
-                            "*source*")
            (message-or-buffer "*source*"
                               (trim
                                (with-out-str
