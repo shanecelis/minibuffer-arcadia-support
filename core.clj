@@ -35,7 +35,8 @@
    [clojure.lang Symbol]
    [UnityEngine Time Mathf Debug]
    [RSG Promise IPromise]
-   [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter Variable]))
+   [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter Variable CompleterEntity MinibufferException]
+   [seawisphunter.minibuffer.extensions MinibufferExtensions]))
 
 (defmacro with-minibuffer
   "Minibuffer/instance is only available when a scene with Minibuffer is running.
@@ -112,6 +113,7 @@ provide an error message if `M-x edit-variable param-name' is attempted."
        `(do
             (defn ~fn-name
               ~@defnargs)
+            ;;(log "register-command-fn" ~(name fn-name))
             (register-command-fn
              {
              :name ~(name fn-name)
@@ -347,7 +349,7 @@ dictionary of symbols and vars."
                                       (eval `(clojure.repl/doc ~function))))))
            (message "No such function \"%s\"." function)))
 
-(defcmd ^{:key-binding "C-h s"} show-source
+(defcmd ^{:key-binding "C-."} show-source
   "Show source code if available."
   [^{:prompt "Show source: " :history "function" :completer "source"
      :require-match true}

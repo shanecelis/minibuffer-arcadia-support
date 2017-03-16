@@ -4,23 +4,18 @@ using seawisphunter.minibuffer;
 using clojure.lang;
 using Arcadia;
 
-[CommandGroup("lisp", autoRegister = false)]
+[CommandGroup("lisp")]
 public class LispCommands : MonoBehaviour {
 
   void Start() {
     RT.load("minibuffer/lisp/core");
-    RT.load("minibuffer/lisp/example");
+    // RT.load("minibuffer/lisp/example");
 
-    var result = RT.var("minibuffer.lisp.core", "repl-setup")
+    RT.var("minibuffer.lisp.core", "repl-setup")
       .invoke();
-    // Can't do this.
-    // RT.var("clojure.core", "in-ns")
-    //   .invoke(RT.var("clojure.core", "symbol")
-    //           .invoke("user"));
 
-    //EvalExpression("(minibuffer.lisp.core/repl-setup)");
-    // Should I do a (use 'minibuffer.lisp.core 'arcadia.core) here too?
-    Minibuffer.OnStart((m) => m.Register(this));
+    Minibuffer.Register(this);
+    //Minibuffer.OnStart((m) => m.Register(this));
   }
 
   /**

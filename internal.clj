@@ -8,7 +8,8 @@
    [clojure.lang Symbol]
    [UnityEngine Time Mathf Debug]
    [RSG Promise IPromise]
-   [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter Variable]))
+   [System.Collections.Generic |Dictionary`2[,]|]
+   [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter Variable CompleterEntity ListCompleter DictCompleter]))
 
 ;; Thanks, Joseph (@selfsame), for the repl environment tip!
 (def repl-env (atom (arcadia.repl/env-map)))
@@ -298,7 +299,7 @@ The coercer accepts two arguments, the selected string and the desired type.
 (defn into-dict-string-string
   "Convert map into a Dictionary<String,String> object."
   [map]
-  (into-dict |Dictionary`2[String,String]| map))
+  (into-dict |System.Collections.Generic.Dictionary`2[System.String,System.String]| map))
 
 (defn make-dict-completer
   "Convert a map into a DictCompleter."
