@@ -9,7 +9,7 @@
    [UnityEngine Time Mathf Debug]
    [RSG Promise IPromise]
    [System.Collections.Generic |Dictionary`2[,]|]
-   [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter Variable CompleterEntity ListCompleter DictCompleter]))
+   [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter ICoercer Variable CompleterEntity ListCompleter DictCompleter]))
 
 ;; Thanks, Joseph (@selfsame), for the repl environment tip!
 (def repl-env (atom (arcadia.repl/env-map)))
@@ -173,9 +173,9 @@ e.g. (generate-generic-type 'Dictionary [String String])
 (defn- gen-setter
   ([map key]
         (gen-setter map key (name key)))
-  ([map key property-name inst]
+  ([map key attribute-name inst]
         `(if-let [v# (~key ~map nil)]
-                 (~(symbol (str ".set_" property-name)) ~inst v#))))
+                 (set! (~(symbol (str "." attribute-name)) ~inst) v#))))
 
 (defn- kebabs-to-camels
   "Convert from kebab-case to camelCase."
@@ -213,8 +213,7 @@ Use constructor:
 (make-map-constructor
  ^:private make-prompt-
  Prompt
- [:prompt :input :history :completer :require-match :require-coerce :completions
-  :ignore :default-value])
+ [:prompt :input :history :completer :require-coerce :require-match :completions :ignore :default-value])
 
 (defn make-prompt
  "Create a Prompt object. Accepts the following attributes:
@@ -277,6 +276,7 @@ The coercer accepts two arguments, the selected string and the desired type.
   (CompleterEntity. (reify ICompleter
                            (Complete [this input]
                                      (into-array String (completer-fn input)))
+                           ICoercer
                            (Coerce [this item desired-type]
                                    (completer-fn item desired-type)))))
 

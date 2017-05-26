@@ -2055,12 +2055,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b23e04d35ed444962a1cfd2cec4609e9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  commandOrVariable: 0
   customName: 0
   commandName: 
+  variableName: 
   bindKey: 0
   keyBinding: 
   customTarget: 1
-  target: {fileID: 0}
+  target: {fileID: 1392167767}
 --- !u!1 &1133415449
 GameObject:
   m_ObjectHideFlags: 0
@@ -2799,8 +2801,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b23e04d35ed444962a1cfd2cec4609e9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  commandOrVariable: 0
   customName: 0
   commandName: 
+  variableName: 
   bindKey: 0
   keyBinding: 
   customTarget: 0

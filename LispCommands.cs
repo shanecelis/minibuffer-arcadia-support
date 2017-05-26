@@ -4,7 +4,7 @@ using seawisphunter.minibuffer;
 using clojure.lang;
 using Arcadia;
 
-[CommandGroup("lisp")]
+[Group("lisp")]
 public class LispCommands : MonoBehaviour {
 
   void Start() {
