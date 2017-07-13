@@ -354,8 +354,9 @@ The coercer accepts two arguments, the selected string and the desired type.
             (.Invoke meth m
                      (into-array Object
                                  [(make-variable attrs)
-                                 get-func
-                                 set-action]))))))
+                                  get-func
+                                  set-action
+                                  nil]))))))
 
 (defn register-command-fn
   "Register a Minibuffer command."
