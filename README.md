@@ -5,7 +5,7 @@
 
 > Adds lisp support to [Minibuffer](http://seawisphunter.com/minibuffer/api/) using [Arcadia](http://arcadia-unity.github.io), a Clojure development environment for [Unity3D](http://unity3d.com/).
 
-TODO: Fill out this long description.
+[Minibuffer](http://seawisphunter.com/minibuffer/api/) is a developer console for Unity. This project adds support for [Arcadia](http://arcadia-unity.github.io) so that you can use Lisp in Minibuffer and likewise add commands, variables, and key bindings.
 
 ## Background
 
