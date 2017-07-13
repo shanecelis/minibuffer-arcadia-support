@@ -1,24 +1,40 @@
 ﻿using UnityEngine;
 using System.Collections;
 using SeawispHunter.MinibufferConsole;
+using SeawispHunter.MinibufferConsole.Extensions;
 using clojure.lang;
 using Arcadia;
 
 [Group("lisp")]
 public class LispCommands : MonoBehaviour {
 
+  public const string defaultInitCode
+    = "(in-ns 'user)\n"
+    + "(use 'minibuffer.lisp.core 'arcadia.core 'clojure.repl)\n"
+    + "(import [UnityEngine Time Mathf Debug])";
+  [TextArea]
+  // public string initCode2 = defaultInitCode;
+  public string initCode = defaultInitCode;
+  public MinibufferListing minibufferExtensions;
+
   void Start() {
-    RT.load("minibuffer/lisp/core");
-    // RT.load("minibuffer/lisp/example");
+    if (initCode.IsZull())
+      initCode = defaultInitCode;
+    try {
+      RT.load("minibuffer/lisp/core");
 
-    RT.var("minibuffer.lisp.core", "repl-setup")
-      .invoke();
-
+      RT.var("minibuffer.lisp.core", "repl-setup")
+        .invoke();
+    } catch (System.Exception e) {
+      Debug.LogWarning("Error loading minibuffer.lisp.core.");
+      Debug.LogException(e);
+    }
+    EvalExpression("(do " + initCode + ")");
     Minibuffer.Register(this);
   }
 
   /**
-    This could also be implemented with a clojure function. 
+    This could also be implemented with a clojure function.
 
    ```
    (defcmd eval-expression

@@ -317,13 +317,39 @@ dictionary of symbols and vars."
                     (throw (MinibufferException.
                             (format "Unable to convert \"%s\" to desired type %s." item desired-type))))))))
 
+;; This is equivalent to the C# coded "eval-expression" command
+;; in LispCommands.cs.
+;;
+;; (defcmd ^{:key-binding "M-:"} eval-expression
+
+;;   "Evaluate a Clojure expression and show its result."
+;;   [ ^{:prompt "Eval: " :history "expression" }
+;;   ^String expression
+;;   ^{:default-value "*eval*"}
+;;   ^String buffer-name]
+;;   (message-or-buffer buffer-name (trim (repl-eval-print-string expression))))
+
+;; This is equivalent to the C# coded "eval-expression" command in
+;; LispCommands.cs.  However, it's replicated here for two reasons: 1.
+;; The eval-expression command can be shown in the LispCommands component.
+;; 2. We prefer this to a raw `repl-eval-print-string` because its output
+;; goes somewhere.
+(defn eval-expression
+  "Evaluate a Clojure expression and show its result in Minibuffer."
+  ([^String expression]
+   (eval-expression expression "*eval*"))
+  ([^String expression
+    ^String buffer-name]
+   (message-or-buffer buffer-name (trim (repl-eval-print-string expression)))))
+
 (defn repl-setup
   "Called by LispCommands.cs after minibuffer.lisp.core is loaded. Sets up
   namespaces and completers."
   []
-  (repl-eval-print-string "(in-ns 'user)")
-  (repl-eval-print-string "(use 'minibuffer.lisp.core 'minibuffer.lisp.example 'arcadia.core 'clojure.repl)")
-  (repl-eval-print-string "(import [UnityEngine Time Mathf Debug]")
+  ;; This repl-eval-print-string is eating my exceptions.  That's bad.
+  ;; (eval-expression "(in-ns 'user)")
+  ;; (eval-expression "(use 'minibuffer.lisp.core 'arcadia.core 'clojure.repl)")
+  ;; (eval-expression "(import [UnityEngine Time Mathf Debug])")
 
   ;; This is a static completer.  It will know the symbols that
   ;; we started with.
@@ -333,7 +359,7 @@ dictionary of symbols and vars."
   ;; This is a live completer.
   (set-completer "Symbol" (make-symbol-completer))
   (set-completer "function" (make-symbol-completer filter-functions))
-  (set-completer "variable" (make-symbol-completer filter-variables))
+  (set-completer "clojure-variable" (make-symbol-completer filter-variables))
   (set-completer "source" (make-symbol-completer filter-sources)))
 
 (defcmd ^{:key-binding "C-h f"} describe-function
@@ -367,14 +393,3 @@ dictionary of symbols and vars."
                               )
            (message "No such function \"%s\"." function)))
 
-;; This is equivalent to the C# coded "eval-expression" command
-;; in LispCommands.cs.
-;;
-;; (defcmd ^{:key-binding "M-:"} eval-expression
-
-;;   "Evaluate a Clojure expression and show its result."
-;;   [ ^{:prompt "Eval: " :history "expression" }
-;;   ^String expression
-;;   ^{:default-value "*eval*"}
-;;   ^String buffer-name]
-;;   (message-or-buffer buffer-name (trim (repl-eval-print-string expression))))
