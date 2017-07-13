@@ -6,7 +6,7 @@
         clojure.pprint)
   (:import
    [UnityEngine Time Mathf Debug]
-   [seawisphunter.minibuffer Minibuffer ]))
+   [SeawispHunter.MinibufferConsole Minibuffer ]))
 
 ;; most basic
 (defcmd say-hello0 []
@@ -25,46 +25,46 @@
   (message "Hi, %s!" x)
   1)
 
-(pprint (macroexpand-1 '(defcmd ^Int64 ^{:key-binding "C-h f"} say-hello3 [^String x]
-                   (message "Hi, %s!" x)
-                   1)))
+;; (pprint (macroexpand-1 '(defcmd ^Int64 ^{:key-binding "C-h f"} say-hello3 [^String x]
+;;                    (message "Hi, %s!" x)
+;;                    1)))
 
-(defcmd say-hello4 [^String ^{:prompt "What's your name? "} x]
+(defcmd ^{:key-binding "C-c 4"} say-hello4 [^String ^{:prompt "What's your name? "} x]
   (message "Hi, %s!" x))
 
 (defcmd clojure-is
   [
   ^{:prompt "Clojure is... "
-  :completions ["good" "the best!" "has too many parens"]
-  :require-match true                ; This is required to force a match on RET.
-  }
-  ^String
-  x]
-  (message "clojure-is %s" (pr-str x))
+    :completions ["good" "the best!" "has too many parens"]
+    :require-match true                ; This is required to force a match on RET.
+    }
+   ^String
+   x]
+;  (message "clojure-is %s" (pr-str x))
   (if-not (= x "has too many parens")
       (message "Yes, it is.")
     (message "Wrong. It's the best!")))
 
-(pprint (macroexpand-1 '
-         (defcmd clojure-is [^String ^{:prompt "Clojure is... " :completions ["good" "the best!" "has too many parens"]} x]
-           (message x)
-           (if-not (= x "has too many parens")
-                   (message "Yes, it is.")
-                   (message "Wrong. It's the best!")))))
-(pprint (macroexpand-1 '(defcmd ^Int64 say-hello4 [^String ^{:prompt "What's your name? "} x]
-                   (message "Hi, %s!" x)
-                   1)))
+;; (pprint (macroexpand-1 '
+;;          (defcmd clojure-is [^String ^{:prompt "Clojure is... " :completions ["good" "the best!" "has too many parens"]} x]
+;;            (message x)
+;;            (if-not (= x "has too many parens")
+;;                    (message "Yes, it is.")
+;;                    (message "Wrong. It's the best!")))))
+;; (pprint (macroexpand-1 '(defcmd ^Int64 say-hello4 [^String ^{:prompt "What's your name? "} x]
+;;                    (message "Hi, %s!" x)
+;;                    1)))
 
 
-(macroexpand-1 '(defcmd ^Int64 say-hello4 [^String ^{:prompt "What's your name? "} x]
-   (message "Hi, %s!" x)
-   1))
+;; (macroexpand-1 '(defcmd ^Int64 say-hello4 [^String ^{:prompt "What's your name? "} x]
+;;    (message "Hi, %s!" x)
+;;    1))
 
 
 
-(macroexpand-1 '(defcmd ^Int64 say-hello4 [^String  x]
-                  (message "Hi, %s!" x)
-                  1))
+;; (macroexpand-1 '(defcmd ^Int64 say-hello4 [^String  x]
+;;                   (message "Hi, %s!" x)
+;;                   1))
 
 ;(def a (atom 0))
 ;(def b (atom 0))

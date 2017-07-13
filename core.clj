@@ -35,8 +35,8 @@
    [clojure.lang Symbol]
    [UnityEngine Time Mathf Debug]
    [RSG Promise IPromise]
-   [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter Variable CompleterEntity MinibufferException]
-   [seawisphunter.minibuffer.extensions MinibufferExtensions]))
+   [SeawispHunter.MinibufferConsole Minibuffer Command Prompt Keymap ICompleter Variable CompleterEntity MinibufferException]
+   [SeawispHunter.MinibufferConsole.Extensions MinibufferExtensions]))
 
 (defmacro with-minibuffer
   "Minibuffer/instance is only available when a scene with Minibuffer is running.

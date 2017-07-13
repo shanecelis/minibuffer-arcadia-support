@@ -9,7 +9,8 @@
    [UnityEngine Time Mathf Debug]
    [RSG Promise IPromise]
    [System.Collections.Generic |Dictionary`2[,]|]
-   [seawisphunter.minibuffer Minibuffer Command Prompt Keymap ICompleter ICoercer Variable CompleterEntity ListCompleter DictCompleter]))
+   [SeawispHunter.MinibufferConsole Minibuffer Command Prompt Keymap ICompleter ICoercer Variable CompleterEntity ListCompleter DictCompleter]
+   [SeawispHunter.MinibufferConsole.Extensions MinibufferExtensions]))
 
 ;; Thanks, Joseph (@selfsame), for the repl environment tip!
 (def repl-env (atom (arcadia.repl/env-map)))
@@ -342,8 +343,12 @@ The coercer accepts two arguments, the selected string and the desired type.
   (let [attrs (if (string? variable-name-or-attrs)
                   {:name variable-name-or-attrs}
                   variable-name-or-attrs)
-       generic-meth (.GetMethod Minibuffer "RegisterVariable")
-       meth (.MakeGenericMethod generic-meth (into-array Type [type])) ]
+;       generic-meth (.GetMethod Minibuffer "RegisterVariable")
+        meth (MinibufferExtensions/GetMethodGeneric Minibuffer
+                                                    "RegisterVariable"
+                                                    (into-array Type [type])
+                                                    (into-array Type [nil nil nil nil]))]
+       ;; meth (.MakeGenericMethod generic-meth (into-array Type [type])) ]
        (do-with-minibuffer
         (fn [m]
             (.Invoke meth m

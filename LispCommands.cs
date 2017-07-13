@@ -1,6 +1,6 @@
 ﻿using UnityEngine;
 using System.Collections;
-using seawisphunter.minibuffer;
+using SeawispHunter.MinibufferConsole;
 using clojure.lang;
 using Arcadia;
 
@@ -15,7 +15,6 @@ public class LispCommands : MonoBehaviour {
       .invoke();
 
     Minibuffer.Register(this);
-    //Minibuffer.OnStart((m) => m.Register(this));
   }
 
   /**
