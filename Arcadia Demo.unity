@@ -3827,6 +3827,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1e45d1744c2f04f25b76d053428d84d4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  initCode: '(in-ns ''user)
+
+    (use ''minibuffer.lisp.core ''minibuffer.lisp.example ''arcadia.core ''clojure.repl)
+
+    (import [UnityEngine Time Mathf Debug])'
 --- !u!4 &1992362935
 Transform:
   m_ObjectHideFlags: 0
