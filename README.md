@@ -14,7 +14,7 @@
 Install Minibuffer and Arcadia into your project file. Then clone this repo into the `Assets/minibuffer/lisp` directory.
 
 ```
-$ cd Assets/minibuffer
+$ cd "Assets/Minibuffer Console"
 $ git clone git@github.com:shanecelis/minibuffer-arcadia-support.git lisp
 ```
 
